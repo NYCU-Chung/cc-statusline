@@ -293,7 +293,7 @@ process.stdin.on('end', () => {
 
     // Summary rows with label
     for (let si = 0; si < sumLines.length; si++) {
-      const label = si === 0 ? `${DIM}session${R} ` : '         ';
+      const label = si === 0 ? `${DIM}session summary${R} ` : '         ';
       output.push(`${h('\u2502')} ${label}${pad(sumLines[si], LEFT_W - 10)} ${h('\u2502')}${rcell()}`);
     }
 

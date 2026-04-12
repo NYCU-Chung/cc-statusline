@@ -98,9 +98,6 @@ The statusline works without the hooks — you just won't see agents, edited fil
 
 Claude Code currently does not pass terminal width to statusline commands ([issue #22115](https://github.com/anthropics/claude-code/issues/22115)). On Windows, the script uses PowerShell as a fallback to detect width. The right border may not perfectly align with the terminal edge until this is fixed upstream.
 
-## Credits
-
-Part of the [my-claude-devteam](https://github.com/NYCU-Chung/my-claude-devteam) ecosystem — 12 specialized subagents + 15 automation hooks + P7/P9/P10 methodology for Claude Code.
 
 ## License
 
