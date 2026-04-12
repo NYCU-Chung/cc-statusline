@@ -1,8 +1,10 @@
 # cc-statusline
 
+**English · [繁體中文](./README.zh-TW.md)**
+
 A comprehensive statusline dashboard for Claude Code. See everything at a glance — no slash commands needed.
 
-![Demo](./images/statusline-demo.png)
+![Demo](./images/demo-en.png)
 
 ## What it shows
 
@@ -36,11 +38,13 @@ Add this to `~/.claude/settings.json`:
 Then copy the files:
 
 ```bash
+git clone https://github.com/NYCU-Chung/cc-statusline ~/cc-statusline
+
 # Main statusline script
-cp statusline.js ~/.claude/statusline.js
+cp ~/cc-statusline/statusline.js ~/.claude/statusline.js
 
 # Supporting hooks (optional but recommended — they feed data to the statusline)
-cp hooks/*.js ~/.claude/hooks/
+cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
 ```
 
 ### Hook wiring
