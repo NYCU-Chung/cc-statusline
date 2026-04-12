@@ -291,10 +291,10 @@ process.stdin.on('end', () => {
       return ` ${content} ${h('\u2502')}`;
     };
 
-    // Summary rows with label
+    // Summary rows with label ("session summary " = 16 visible chars)
     for (let si = 0; si < sumLines.length; si++) {
-      const label = si === 0 ? `${DIM}session summary${R} ` : '         ';
-      output.push(`${h('\u2502')} ${label}${pad(sumLines[si], LEFT_W - 10)} ${h('\u2502')}${rcell()}`);
+      const label = si === 0 ? `${DIM}session summary${R} ` : ' '.repeat(16);
+      output.push(`${h('\u2502')} ${label}${pad(sumLines[si], LEFT_W - 18)} ${h('\u2502')}${rcell()}`);
     }
 
     // Split start
