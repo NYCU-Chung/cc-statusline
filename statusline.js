@@ -96,10 +96,12 @@ process.stdin.on('end', () => {
     const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
     const sessionName = i.session_name || '';
 
-    let branch = '', dirty = 0;
+    let branch = '', dirty = 0, repoName = '';
     try {
       branch = (spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', timeout: 2000 }).stdout || '').trim();
       dirty = (spawnSync('git', ['status', '--porcelain'], { encoding: 'utf8', timeout: 2000 }).stdout || '').trim().split('\n').filter(Boolean).length;
+      const toplevel = (spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 2000 }).stdout || '').trim();
+      if (toplevel) repoName = path.basename(toplevel);
     } catch (e) {}
     const shortDir = (i.cwd || i.workspace?.current_dir || '').split(/[/\\]/).slice(-2).join('/');
 
@@ -171,14 +173,17 @@ process.stdin.on('end', () => {
     } catch(e) {}
 
     // ── Build left-side content ──
-    const gitInfo = branch ? `${MAGENTA}${branch}${R}${dirty ? ` ${DIM}(${dirty} changed)${R}` : ''}` : '';
+    const gitParts = [];
+    if (repoName) gitParts.push(`${CYAN}${repoName}${R}`);
+    if (branch) gitParts.push(`${MAGENTA}${branch}${R}${dirty ? ` ${DIM}(${dirty} changed)${R}` : ''}`);
+    const gitInfo = gitParts.join(' ');
 
     // Split rows: [leftCol, rightCol]
-    const splitRow1L = `\u{1f4c1} ${shortDir}`;
-    const splitRow1R = `${CYAN}${model}${R} \u00b7 ${cost} \u00b7 ${dur}  ${effort}`;
     const linesInfo = `${GREEN}+${added}${R} ${RED}-${removed}${R} ${DIM}lines${R}`;
-    const splitRow2L = gitInfo ? `${gitInfo}  ${linesInfo}` : linesInfo;
-    const splitRow2R = `${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}compacts${R} ${compactCount}`;
+    const splitRow1L = `\u{1f4c1} ${shortDir}  ${linesInfo}`;
+    const splitRow1R = `${CYAN}${model}${R}  ${effort}`;
+    const splitRow2L = gitInfo || '';
+    const splitRow2R = `${cost} \u00b7 ${dur}  ${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}compacts${R} ${compactCount}`;
 
     // Full-width left rows
     const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R}`;
