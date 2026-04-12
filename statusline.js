@@ -22,6 +22,21 @@ process.stdin.on('end', () => {
       (cp >= 0x25fd && cp <= 0x25fe) ||   // ◽◾
       (cp >= 0x2614 && cp <= 0x2615) ||   // ☔☕
       (cp >= 0x2648 && cp <= 0x2653) ||   // ♈-♓
+      cp === 0x267f ||                     // ♿
+      cp === 0x26a1 ||                     // ⚡
+      (cp >= 0x26aa && cp <= 0x26ab) ||    // ⚪⚫
+      (cp >= 0x26bd && cp <= 0x26be) ||    // ⚽⚾
+      (cp >= 0x26c4 && cp <= 0x26c5) ||    // ⛄⛅
+      cp === 0x26ce || cp === 0x26d4 || cp === 0x26ea || // ⛎⛔⛪
+      (cp >= 0x26f2 && cp <= 0x26f3) ||    // ⛲⛳
+      cp === 0x26f5 || cp === 0x26fa || cp === 0x26fd || // ⛵⛺⛽
+      cp === 0x2705 ||                     // ✅
+      cp === 0x2728 ||                     // ✨
+      cp === 0x274c || cp === 0x274e ||    // ❌❎
+      (cp >= 0x2753 && cp <= 0x2755) ||    // ❓❔❕
+      cp === 0x2757 ||                     // ❗
+      (cp >= 0x2795 && cp <= 0x2797) ||    // ➕➖➗
+      cp === 0x27b0 || cp === 0x27bf ||    // ➰➿
       (cp >= 0x2e80 && cp <= 0x303e) ||   // CJK Radicals → CJK Symbols
       (cp >= 0x3041 && cp <= 0x33bf) ||   // Hiragana → CJK Compatibility
       (cp >= 0x3400 && cp <= 0x4dbf) ||   // CJK Extension A
