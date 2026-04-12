@@ -12,14 +12,35 @@ process.stdin.on('end', () => {
     const R = '\x1b[0m', DIM = '\x1b[2m';
     const CYAN = '\x1b[36m', GREEN = '\x1b[32m', RED = '\x1b[31m', YELLOW = '\x1b[33m', MAGENTA = '\x1b[35m', BLUE = '\x1b[34m';
 
+    // Unicode East Asian Width: returns 2 for fullwidth/wide chars, 1 otherwise.
+    // Based on UAX #11 (Unicode Standard Annex) + common emoji.
+    const isWide = cp =>
+      (cp >= 0x1100 && cp <= 0x115f) ||   // Hangul Jamo
+      (cp >= 0x231a && cp <= 0x231b) ||   // ⌚⌛
+      (cp >= 0x23e9 && cp <= 0x23f3) ||   // ⏩-⏳
+      (cp >= 0x23f8 && cp <= 0x23fa) ||   // ⏸-⏺
+      (cp >= 0x25fd && cp <= 0x25fe) ||   // ◽◾
+      (cp >= 0x2614 && cp <= 0x2615) ||   // ☔☕
+      (cp >= 0x2648 && cp <= 0x2653) ||   // ♈-♓
+      (cp >= 0x2e80 && cp <= 0x303e) ||   // CJK Radicals → CJK Symbols
+      (cp >= 0x3041 && cp <= 0x33bf) ||   // Hiragana → CJK Compatibility
+      (cp >= 0x3400 && cp <= 0x4dbf) ||   // CJK Extension A
+      (cp >= 0x4e00 && cp <= 0xa4cf) ||   // CJK Unified Ideographs + Yi
+      (cp >= 0xa960 && cp <= 0xa97c) ||   // Hangul Jamo Extended-A
+      (cp >= 0xac00 && cp <= 0xd7a3) ||   // Hangul Syllables
+      (cp >= 0xf900 && cp <= 0xfaff) ||   // CJK Compatibility Ideographs
+      (cp >= 0xfe10 && cp <= 0xfe6b) ||   // Vertical Forms + CJK Compatibility Forms
+      (cp >= 0xff01 && cp <= 0xff60) ||   // Fullwidth ASCII
+      (cp >= 0xffe0 && cp <= 0xffe6) ||   // Fullwidth Signs
+      (cp >= 0x1f004 && cp <= 0x1f9ff) || // Emoji block (Mahjong → Supplemental Symbols)
+      (cp >= 0x1fa00 && cp <= 0x1faff) || // Chess symbols + Extended-A emoji
+      (cp >= 0x20000 && cp <= 0x2fffd) || // CJK Extension B-F
+      (cp >= 0x30000 && cp <= 0x3fffd);   // CJK Extension G+
+
     const dw = s => {
       let w = 0;
       for (const ch of s.replace(/\x1b\[[0-9;]*m/g, '')) {
-        const cp = ch.codePointAt(0);
-        w += (cp > 0xffff || (cp >= 0x1100 && cp <= 0x115f) || cp === 0x23F3 ||
-              (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3) ||
-              (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xfe10 && cp <= 0xfe6f) ||
-              (cp >= 0xff01 && cp <= 0xff60)) ? 2 : 1;
+        w += isWide(ch.codePointAt(0)) ? 2 : 1;
       }
       return w;
     };
@@ -30,12 +51,7 @@ process.stdin.on('end', () => {
       for (let j = 0; j < s.length; j++) {
         if (s[j] === '\x1b') { inEsc = true; result += s[j]; continue; }
         if (inEsc) { result += s[j]; if (/[a-zA-Z]/.test(s[j])) inEsc = false; continue; }
-        const cp = s.codePointAt(j);
-        const cw = (cp > 0xffff || cp === 0x23F3 ||
-                    (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3) ||
-                    (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xfe10 && cp <= 0xfe6f) ||
-                    (cp >= 0xff01 && cp <= 0xff60) || (cp >= 0x4e00 && cp <= 0x9fff) ||
-                    (cp >= 0x3400 && cp <= 0x4dbf)) ? 2 : 1;
+        const cw = isWide(s.codePointAt(j)) ? 2 : 1;
         if (rw + cw > w) break;
         rw += cw; result += s[j];
       }
@@ -101,7 +117,7 @@ process.stdin.on('end', () => {
 
     let msgHistory = [];
     try {
-      msgHistory = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-msgs-${sid}.json`), 'utf8')).slice(-7);
+      msgHistory = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-msgs-${sid}.json`), 'utf8'));
     } catch (e) {}
 
     // Memory: check which CLAUDE.md / rules are loaded
@@ -228,11 +244,7 @@ process.stdin.on('end', () => {
     const sumLines = [];
     { let curLine = '', curW = 0;
       for (const ch of summary) {
-        const cp = ch.codePointAt(0);
-        const cw = (cp > 0xffff || (cp >= 0x2e80 && cp <= 0xa4cf) || (cp >= 0xac00 && cp <= 0xd7a3) ||
-                    (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3400 && cp <= 0x4dbf) ||
-                    (cp >= 0xf900 && cp <= 0xfaff) || (cp >= 0xff01 && cp <= 0xff60) ||
-                    (cp >= 0x3000 && cp <= 0x303f)) ? 2 : 1;
+        const cw = isWide(ch.codePointAt(0)) ? 2 : 1;
         if (curW + cw > maxSumW_calc && curLine) { sumLines.push(curLine); curLine = ch; curW = cw; }
         else { curLine += ch; curW += cw; }
         if (sumLines.length >= 4) break;

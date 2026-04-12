@@ -23,6 +23,15 @@ A comprehensive statusline dashboard for Claude Code. See everything at a glance
 
 ## Install
 
+### One-command (plugin)
+
+```
+claude plugin marketplace add NYCU-Chung/cc-statusline
+claude plugin install cc-statusline@cc-statusline
+```
+
+Hooks are registered automatically. You still need to add the statusLine config manually:
+
 Add this to `~/.claude/settings.json`:
 
 ```json

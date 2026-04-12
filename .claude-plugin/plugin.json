@@ -1,0 +1,13 @@
+{
+  "name": "cc-statusline",
+  "version": "1.0.0",
+  "description": "A comprehensive statusline dashboard for Claude Code — session summary, quota bars, agent tracker, MCP health, message history, and more. All at a glance, no slash commands needed.",
+  "author": {
+    "name": "NYCU-Chung",
+    "url": "https://github.com/NYCU-Chung"
+  },
+  "homepage": "https://github.com/NYCU-Chung/cc-statusline",
+  "repository": "https://github.com/NYCU-Chung/cc-statusline",
+  "license": "MIT",
+  "keywords": ["statusline", "dashboard", "claude-code", "hooks", "terminal", "monitoring"]
+}

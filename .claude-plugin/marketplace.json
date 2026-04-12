@@ -1,0 +1,22 @@
+{
+  "name": "cc-statusline",
+  "owner": {
+    "name": "NYCU-Chung",
+    "url": "https://github.com/NYCU-Chung"
+  },
+  "metadata": {
+    "description": "Comprehensive statusline dashboard for Claude Code — session info, quotas, agents, MCP, message history."
+  },
+  "plugins": [
+    {
+      "name": "cc-statusline",
+      "description": "A comprehensive statusline dashboard for Claude Code with session summary, quota bars, agent tracker, MCP health, message history sidebar, and more.",
+      "version": "1.0.0",
+      "source": "./",
+      "author": {
+        "name": "NYCU-Chung",
+        "url": "https://github.com/NYCU-Chung"
+      }
+    }
+  ]
+}

@@ -16,7 +16,7 @@ process.stdin.on('end', () => {
       const text = i.prompt.replace(/\n/g, ' ').trim();
       if (text.length > 2) {
         msgs.push({ r: 'u', t: text });
-        msgs = msgs.slice(-14); // keep last 14 (7 pairs)
+        msgs = msgs.slice(-30); // keep last 14 (7 pairs)
         fs.writeFileSync(file, JSON.stringify(msgs));
       }
     } else if (i.hook_event_name === 'Stop') {
@@ -41,7 +41,7 @@ process.stdin.on('end', () => {
               text = text.replace(/\n/g, ' ').trim();
               if (text.length > 5) {
                 msgs.push({ r: 'a', t: text });
-                msgs = msgs.slice(-14);
+                msgs = msgs.slice(-30);
                 fs.writeFileSync(file, JSON.stringify(msgs));
               }
               break;

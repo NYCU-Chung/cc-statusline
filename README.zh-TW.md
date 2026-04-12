@@ -23,6 +23,15 @@ Claude Code 的完整 statusline 儀表板。所有資訊一目瞭然 — 不再
 
 ## 安裝
 
+### 一鍵安裝（plugin）
+
+```
+claude plugin marketplace add NYCU-Chung/cc-statusline
+claude plugin install cc-statusline@cc-statusline
+```
+
+Hooks 會自動註冊。你只需要手動加入 statusLine 設定：
+
 在 `~/.claude/settings.json` 加入：
 
 ```json
