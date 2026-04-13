@@ -223,10 +223,10 @@ process.stdin.on('end', () => {
       const { spawn } = require('child_process');
       const refresher = path.join(os.homedir(), '.claude', 'hooks', 'mcp-status-refresh.js');
       if (fs.existsSync(refresher)) {
-        const rArgs = [refresher];
-        const sessionCwd = i.cwd || i.workspace?.current_dir;
-        if (sessionCwd) rArgs.push(sessionCwd);
-        const p = spawn(process.execPath, rArgs, { detached: true, stdio: 'ignore', windowsHide: true });
+        // Don't pass cwd — let refresher default to home dir for a stable global view.
+        // Passing the session cwd caused the list to flicker based on project-scoped .mcp.json
+        // (e.g. phantom 'discord'/'line' entries appearing when spawned from plugin folders).
+        const p = spawn(process.execPath, [refresher], { detached: true, stdio: 'ignore', windowsHide: true });
         p.unref();
       }
     } catch(e) {}
