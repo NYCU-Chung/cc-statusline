@@ -87,35 +87,42 @@ process.stdin.on('end', () => {
     const model = (i.model?.display_name || '?').replace('Claude ', '');
     const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
 
-    // Claude Code occasionally resets total_cost / duration / lines (context compact,
-    // auto-recovery, etc). Keep monotonic per-session accumulators in a cache file
-    // so the statusline doesn't suddenly drop from $500 → $5.
+    // Claude Code sometimes resets total_cost / duration / lines (context compact,
+    // auto-recovery, etc). Instead of freezing at max (which could over-report),
+    // track DELTAS: when payload >= last_baseline, add delta to total; when payload
+    // resets (drops below baseline), just re-baseline without touching total.
+    // This way total keeps climbing through resets but never double-counts.
     const curCost = i.cost?.total_cost_usd ?? 0;
     const curDur = i.cost?.total_duration_ms ?? 0;
     const curAdd = i.cost?.total_lines_added ?? 0;
     const curRm = i.cost?.total_lines_removed ?? 0;
     const curTok = (i.context_window?.total_input_tokens ?? 0) + (i.context_window?.total_output_tokens ?? 0);
     const cumPath = path.join(os.tmpdir(), `claude-cum-${sid}.json`);
-    let cum = { cost: 0, dur: 0, add: 0, rm: 0, tok: 0 };
-    try { cum = { ...cum, ...JSON.parse(fs.readFileSync(cumPath, 'utf8')) }; } catch (e) {}
-    const newCum = {
-      cost: Math.max(cum.cost, curCost),
-      dur: Math.max(cum.dur, curDur),
-      add: Math.max(cum.add, curAdd),
-      rm: Math.max(cum.rm, curRm),
-      tok: Math.max(cum.tok, curTok),
+    // Each field: { total: cumulative, base: last-observed payload value }
+    let cum = { cost:{total:0,base:0}, dur:{total:0,base:0}, add:{total:0,base:0}, rm:{total:0,base:0}, tok:{total:0,base:0} };
+    try {
+      const stored = JSON.parse(fs.readFileSync(cumPath, 'utf8'));
+      // Migrate old flat format {cost,dur,add,rm,tok} → new {total,base}
+      for (const k of Object.keys(cum)) {
+        if (stored[k] && typeof stored[k] === 'object') cum[k] = stored[k];
+        else if (typeof stored[k] === 'number') cum[k] = { total: stored[k], base: stored[k] };
+      }
+    } catch (e) {}
+    const step = (key, cur) => {
+      const c = cum[key];
+      if (cur >= c.base) { c.total += (cur - c.base); c.base = cur; }
+      else { c.base = cur; } // reset detected — new baseline, don't touch total
     };
-    if (JSON.stringify(newCum) !== JSON.stringify(cum)) {
-      try { fs.writeFileSync(cumPath, JSON.stringify(newCum)); } catch (e) {}
-    }
-    const cost = '$' + newCum.cost.toFixed(2);
-    const dur = fmtDur(Math.round(newCum.dur / 60000));
+    step('cost', curCost); step('dur', curDur); step('add', curAdd); step('rm', curRm); step('tok', curTok);
+    try { fs.writeFileSync(cumPath, JSON.stringify(cum)); } catch (e) {}
+    const cost = '$' + cum.cost.total.toFixed(2);
+    const dur = fmtDur(Math.round(cum.dur.total / 60000));
     const ctx = Math.round(i.context_window?.used_percentage ?? 0);
     const r5h = Math.round(i.rate_limits?.five_hour?.used_percentage ?? 0);
     const r7d = Math.round(i.rate_limits?.seven_day?.used_percentage ?? 0);
-    const added = newCum.add;
-    const removed = newCum.rm;
-    const tokTotal = newCum.tok;
+    const added = cum.add.total;
+    const removed = cum.rm.total;
+    const tokTotal = cum.tok.total;
     const sessionName = i.session_name || '';
 
     let branch = '', dirty = 0, repoName = '';
@@ -203,9 +210,10 @@ process.stdin.on('end', () => {
           mcpHealthy++;
         } else {
           const shortName = name.replace(/^plugin:[^:]+:/, '').replace(/^claude\.ai /, '');
-          const icon = info.status === 'auth' ? `${YELLOW}!${R}` : `${RED}\u2717${R}`;
+          // Match /mcp UI icons: ✔ connected, ✘ failed, △ needs auth
+          const icon = info.status === 'auth' ? `\u25b3` : `\u2718`;
           const color = info.status === 'auth' ? YELLOW : RED;
-          mcpParts.push(`${color}${shortName}${R} ${icon}`);
+          mcpParts.push(`${color}${shortName} ${icon}${R}`);
         }
       }
     } catch(e) {}
