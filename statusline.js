@@ -217,12 +217,16 @@ process.stdin.on('end', () => {
         }
       }
     } catch(e) {}
-    // Fire background refresh so next render has fresh data (the refresher self-skips if cache fresh)
+    // Fire background refresh so next render has fresh data (the refresher self-skips if cache fresh).
+    // Pass cwd so `claude mcp list` consistently sees the same MCP set as the running session.
     try {
       const { spawn } = require('child_process');
       const refresher = path.join(os.homedir(), '.claude', 'hooks', 'mcp-status-refresh.js');
       if (fs.existsSync(refresher)) {
-        const p = spawn(process.execPath, [refresher], { detached: true, stdio: 'ignore' });
+        const rArgs = [refresher];
+        const sessionCwd = i.cwd || i.workspace?.current_dir;
+        if (sessionCwd) rArgs.push(sessionCwd);
+        const p = spawn(process.execPath, rArgs, { detached: true, stdio: 'ignore' });
         p.unref();
       }
     } catch(e) {}

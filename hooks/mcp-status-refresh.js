@@ -26,12 +26,15 @@ function findClaude() {
   return null;
 }
 const bin = findClaude();
+// Optional cwd arg (passed by statusline). `claude mcp list` picks up project-scoped
+// .mcp.json based on cwd — running from a random cwd yields inconsistent results.
+const targetCwd = process.argv[2] && fs.existsSync(process.argv[2]) ? process.argv[2] : os.homedir();
 let r;
 if (bin) {
-  r = spawnSync(bin, ['mcp', 'list'], { encoding: 'utf8', timeout: 15000 });
+  r = spawnSync(bin, ['mcp', 'list'], { encoding: 'utf8', timeout: 15000, cwd: targetCwd });
 } else {
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  r = spawnSync(cmd, ['mcp', 'list'], { encoding: 'utf8', timeout: 15000, shell: true });
+  r = spawnSync(cmd, ['mcp', 'list'], { encoding: 'utf8', timeout: 15000, shell: true, cwd: targetCwd });
 }
 const out = (r.stdout || '') + (r.stderr || '');
 if (!out.trim()) process.exit(0);
