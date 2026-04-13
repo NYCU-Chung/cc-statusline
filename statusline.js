@@ -226,7 +226,7 @@ process.stdin.on('end', () => {
         const rArgs = [refresher];
         const sessionCwd = i.cwd || i.workspace?.current_dir;
         if (sessionCwd) rArgs.push(sessionCwd);
-        const p = spawn(process.execPath, rArgs, { detached: true, stdio: 'ignore' });
+        const p = spawn(process.execPath, rArgs, { detached: true, stdio: 'ignore', windowsHide: true });
         p.unref();
       }
     } catch(e) {}

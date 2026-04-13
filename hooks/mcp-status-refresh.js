@@ -30,11 +30,12 @@ const bin = findClaude();
 // .mcp.json based on cwd — running from a random cwd yields inconsistent results.
 const targetCwd = process.argv[2] && fs.existsSync(process.argv[2]) ? process.argv[2] : os.homedir();
 let r;
+const spawnOpts = { encoding: 'utf8', timeout: 15000, cwd: targetCwd, windowsHide: true };
 if (bin) {
-  r = spawnSync(bin, ['mcp', 'list'], { encoding: 'utf8', timeout: 15000, cwd: targetCwd });
+  r = spawnSync(bin, ['mcp', 'list'], spawnOpts);
 } else {
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-  r = spawnSync(cmd, ['mcp', 'list'], { encoding: 'utf8', timeout: 15000, shell: true, cwd: targetCwd });
+  r = spawnSync(cmd, ['mcp', 'list'], { ...spawnOpts, shell: true });
 }
 const out = (r.stdout || '') + (r.stderr || '');
 if (!out.trim()) process.exit(0);
