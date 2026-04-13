@@ -12,8 +12,12 @@ process.stdin.on('end', () => {
     const file = path.join(os.tmpdir(), `claude-agents-${sid}.json`);
     let state = {};
     try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
-    const name = i.agent_type;
-    // Skip events with no agent_type (anonymous/system subagents leave random hex ids otherwise)
+    let name = i.agent_type;
+    // Fallback for system subagents without agent_type — recognize known id prefixes
+    if (!name && typeof i.agent_id === 'string') {
+      if (i.agent_id.startsWith('acompact-')) name = 'compact';
+    }
+    // Still unknown (anonymous hex id) → skip, don't pollute display
     if (!name) { process.stdout.write(d); return; }
     if (event === 'SubagentStart') {
       state[name] = { status: 'running', started: Date.now() };
