@@ -12,7 +12,9 @@ process.stdin.on('end', () => {
     const file = path.join(os.tmpdir(), `claude-agents-${sid}.json`);
     let state = {};
     try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
-    const name = i.agent_type || i.agent_id || '?';
+    const name = i.agent_type;
+    // Skip events with no agent_type (anonymous/system subagents leave random hex ids otherwise)
+    if (!name) { process.stdout.write(d); return; }
     if (event === 'SubagentStart') {
       state[name] = { status: 'running', started: Date.now() };
     } else {
