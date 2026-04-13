@@ -191,13 +191,24 @@ process.stdin.on('end', () => {
     const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R}`;
     const fullLeftRows = [quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
-    if (memParts.length) fullLeftRows.push(`${DIM}memory${R}  ${memParts.join(`  `)}`);
     const mcpHealthy = mcpTotal - mcpParts.length;
+    const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(' ')}` : '';
+    let mcpStr = '';
     if (mcpTotal > 0) {
       const mcpLine = mcpParts.length
         ? `${GREEN}${mcpHealthy}${R}/${mcpTotal} active  ${mcpParts.join('  ')}`
         : `${GREEN}${mcpTotal}${R} active`;
-      fullLeftRows.push(`${DIM}mcp${R}     ${mcpLine}`);
+      mcpStr = `${DIM}mcp${R} ${mcpLine}`;
+    }
+    // Track column offset of │ within content area (for border connectors ┬/┴)
+    let memMcpRowIdx = -1, memMcpCol = -1;
+    if (memStr || mcpStr) {
+      if (memStr && mcpStr) {
+        memMcpCol = dw(memStr) + 1; // offset inside padded content area (after "memStr ")
+      }
+      memMcpRowIdx = fullLeftRows.length;
+      const combined = [memStr, mcpStr].filter(Boolean).join(` ${DIM}\u2502${R} `);
+      fullLeftRows.push(combined);
     }
     const sep = ` ${DIM}\u2192${R} `;
     if (fileParts.length) {
@@ -281,20 +292,26 @@ process.stdin.on('end', () => {
     const totalSlots = leftRowCount + 2 + (fullLeftRows.length > 1 ? fullLeftRows.length - 1 : 0);
 
     const rightMsgs = [];
-    for (let j = 0; j < totalSlots; j++) {
-      if (j < msgHistory.length) {
-        const m = msgHistory[j];
-        const icon = m.r === 'u' ? `${BLUE}\u25b6${R}` : `${GREEN}\u25c0${R}`;
-        const text = trunc(m.t.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim(), MSG_W - 4);
-        rightMsgs.push(`${icon} ${text}`);
-      } else {
-        rightMsgs.push('');
-      }
+    // Show the latest `totalSlots` messages (oldest-on-top within the window)
+    const sliced = msgHistory.slice(-totalSlots);
+    const padCount = Math.max(0, totalSlots - sliced.length);
+    for (let j = 0; j < padCount; j++) rightMsgs.push('');
+    for (const m of sliced) {
+      const icon = m.r === 'u' ? `${BLUE}\u25b6${R}` : `${GREEN}\u25c0${R}`;
+      const text = trunc(m.t.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim(), MSG_W - 4);
+      rightMsgs.push(`${icon} ${text}`);
     }
 
     // ── Draw ──
     const h = c => `${DIM}${c}${R}`;
     const hl = (n) => '\u2500'.repeat(n);
+    const hlm = (n, marks) => {
+      const arr = Array(n).fill('\u2500');
+      if (marks) for (const k of Object.keys(marks)) { const i = +k; if (i >= 0 && i < n) arr[i] = marks[k]; }
+      return arr.join('');
+    };
+    // Content area starts at abs col 2; hl spans abs cols 1..LEFT_W → idx = 1 + memMcpCol
+    const mcpHlIdx = memMcpCol >= 0 ? 1 + memMcpCol : -1;
     const output = [];
     let ri = 0; // right message index
 
@@ -335,15 +352,22 @@ process.stdin.on('end', () => {
     for (let j = 0; j < fullLeftRows.length; j++) {
       output.push(`${h('\u2502')} ${pad(fullLeftRows[j], LEFT_W - 2)} ${h('\u2502')}${rcell()}`);
       if (j < fullLeftRows.length - 1) {
-        output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+        const marks = {};
+        if (mcpHlIdx >= 0) {
+          if (j + 1 === memMcpRowIdx) marks[mcpHlIdx] = '\u252c'; // ┬
+          else if (j === memMcpRowIdx) marks[mcpHlIdx] = '\u2534'; // ┴
+        }
+        output.push(`${h('\u251c')}${h(hlm(LEFT_W, marks))}${h('\u2524')}${rcell()}`);
       }
     }
 
-    // Bottom border
+    // Bottom border — if mem/mcp is the LAST full row, extend ┴ downward too
+    const bottomMarks = {};
+    if (mcpHlIdx >= 0 && memMcpRowIdx === fullLeftRows.length - 1) bottomMarks[mcpHlIdx] = '\u2534';
     if (showMsgs) {
-      output.push(`${h('\u2514')}${h(hl(LEFT_W))}${h('\u2534')}${h(hl(MSG_W))}${h('\u2518')}`);
+      output.push(`${h('\u2514')}${h(hlm(LEFT_W, bottomMarks))}${h('\u2534')}${h(hl(MSG_W))}${h('\u2518')}`);
     } else {
-      output.push(`${h('\u2514')}${h(hl(LEFT_W))}${h('\u2518')}`);
+      output.push(`${h('\u2514')}${h(hlm(LEFT_W, bottomMarks))}${h('\u2518')}`);
     }
 
     process.stdout.write(output.join('\n'));
