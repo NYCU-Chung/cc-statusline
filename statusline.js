@@ -85,15 +85,37 @@ process.stdin.on('end', () => {
 
     // ── Data ──
     const model = (i.model?.display_name || '?').replace('Claude ', '');
-    const cost = '$' + (i.cost?.total_cost_usd ?? 0).toFixed(2);
-    const dur = fmtDur(Math.round((i.cost?.total_duration_ms ?? 0) / 60000));
+    const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+
+    // Claude Code occasionally resets total_cost / duration / lines (context compact,
+    // auto-recovery, etc). Keep monotonic per-session accumulators in a cache file
+    // so the statusline doesn't suddenly drop from $500 → $5.
+    const curCost = i.cost?.total_cost_usd ?? 0;
+    const curDur = i.cost?.total_duration_ms ?? 0;
+    const curAdd = i.cost?.total_lines_added ?? 0;
+    const curRm = i.cost?.total_lines_removed ?? 0;
+    const curTok = (i.context_window?.total_input_tokens ?? 0) + (i.context_window?.total_output_tokens ?? 0);
+    const cumPath = path.join(os.tmpdir(), `claude-cum-${sid}.json`);
+    let cum = { cost: 0, dur: 0, add: 0, rm: 0, tok: 0 };
+    try { cum = { ...cum, ...JSON.parse(fs.readFileSync(cumPath, 'utf8')) }; } catch (e) {}
+    const newCum = {
+      cost: Math.max(cum.cost, curCost),
+      dur: Math.max(cum.dur, curDur),
+      add: Math.max(cum.add, curAdd),
+      rm: Math.max(cum.rm, curRm),
+      tok: Math.max(cum.tok, curTok),
+    };
+    if (JSON.stringify(newCum) !== JSON.stringify(cum)) {
+      try { fs.writeFileSync(cumPath, JSON.stringify(newCum)); } catch (e) {}
+    }
+    const cost = '$' + newCum.cost.toFixed(2);
+    const dur = fmtDur(Math.round(newCum.dur / 60000));
     const ctx = Math.round(i.context_window?.used_percentage ?? 0);
     const r5h = Math.round(i.rate_limits?.five_hour?.used_percentage ?? 0);
     const r7d = Math.round(i.rate_limits?.seven_day?.used_percentage ?? 0);
-    const added = i.cost?.total_lines_added ?? 0;
-    const removed = i.cost?.total_lines_removed ?? 0;
-    const tokTotal = (i.context_window?.total_input_tokens ?? 0) + (i.context_window?.total_output_tokens ?? 0);
-    const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    const added = newCum.add;
+    const removed = newCum.rm;
+    const tokTotal = newCum.tok;
     const sessionName = i.session_name || '';
 
     let branch = '', dirty = 0, repoName = '';
@@ -122,10 +144,27 @@ process.stdin.on('end', () => {
     let agentLine = '';
     try {
       const agents = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-agents-${sid}.json`), 'utf8'));
-      agentLine = Object.entries(agents).map(([n, info]) => {
+      // Group by agent name — supports concurrent invocations (e.g. 3 critics in parallel)
+      const byName = {};
+      for (const [key, info] of Object.entries(agents)) {
+        // Migration: old format was keyed by name (no info.name), new format is keyed by agent_id
+        const n = info.name || key;
+        if (!byName[n]) byName[n] = { running: 0, done: 0, latestFinished: 0 };
+        if (info.status === 'running') byName[n].running++;
+        else { byName[n].done++; if ((info.finished || 0) > byName[n].latestFinished) byName[n].latestFinished = info.finished; }
+      }
+      // Build entries: running first, then latest-done, limit to 3 visible names
+      const nameEntries = Object.entries(byName).sort((a, b) => {
+        if (a[1].running !== b[1].running) return b[1].running - a[1].running;
+        return b[1].latestFinished - a[1].latestFinished;
+      }).slice(0, 3);
+      agentLine = nameEntries.map(([n, s]) => {
         const short = n.length > 12 ? n.slice(0, 12) : n;
-        return info.status === 'running' ? `${short} ${YELLOW}\u25cb${R}` : `${short} ${GREEN}\u2713${R} ${DIM}${ago(info.finished)}${R}`;
-      }).slice(-3).join('  ');
+        const parts = [];
+        if (s.running > 0) parts.push(`${YELLOW}\u25cb${s.running > 1 ? `\u00d7${s.running}` : ''}${R}`);
+        if (s.done > 0) parts.push(`${GREEN}\u2713${s.done > 1 ? `\u00d7${s.done}` : ''}${R}${s.latestFinished ? ` ${DIM}${ago(s.latestFinished)}${R}` : ''}`);
+        return `${short} ${parts.join(' ')}`;
+      }).join('  ');
     } catch (e) {}
 
     let compactCount = 0;
@@ -153,24 +192,30 @@ process.stdin.on('end', () => {
       }
     } catch(e) {}
 
-    // MCP: read health cache for unhealthy servers
-    let mcpParts = [];
+    // MCP: read mcp-status-cache.json (populated by mcp-status-refresh.js → `claude mcp list`)
+    let mcpParts = [], mcpTotal = 0, mcpHealthy = 0;
     try {
-      const mcpCache = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'mcp-health-cache.json'), 'utf8'));
+      const mcpCache = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'mcp-status-cache.json'), 'utf8'));
       const servers = mcpCache.servers || {};
       for (const [name, info] of Object.entries(servers)) {
-        if (info.status === 'unhealthy') {
-          mcpParts.push(`${RED}${name} \u2717${R}`);
+        mcpTotal++;
+        if (info.status === 'connected') {
+          mcpHealthy++;
+        } else {
+          const shortName = name.replace(/^plugin:[^:]+:/, '').replace(/^claude\.ai /, '');
+          const icon = info.status === 'auth' ? `${YELLOW}!${R}` : `${RED}\u2717${R}`;
+          const color = info.status === 'auth' ? YELLOW : RED;
+          mcpParts.push(`${color}${shortName}${R} ${icon}`);
         }
       }
     } catch(e) {}
-    // Also count active MCP servers from plugin .mcp.json files
-    let mcpTotal = 0;
+    // Fire background refresh so next render has fresh data (the refresher self-skips if cache fresh)
     try {
-      const pluginDir = path.join(os.homedir(), '.claude', 'plugins', 'cache');
-      if (fs.existsSync(pluginDir)) {
-        const walk = (dir) => { try { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { if (e.isFile() && e.name === '.mcp.json') { try { const c = JSON.parse(fs.readFileSync(path.join(dir, e.name), 'utf8')); mcpTotal += Object.keys(c.mcpServers || {}).length; } catch(e2) {} } else if (e.isDirectory() && e.name !== 'node_modules') walk(path.join(dir, e.name)); } } catch(e3) {} };
-        walk(pluginDir);
+      const { spawn } = require('child_process');
+      const refresher = path.join(os.homedir(), '.claude', 'hooks', 'mcp-status-refresh.js');
+      if (fs.existsSync(refresher)) {
+        const p = spawn(process.execPath, [refresher], { detached: true, stdio: 'ignore' });
+        p.unref();
       }
     } catch(e) {}
 
@@ -191,7 +236,6 @@ process.stdin.on('end', () => {
     const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R}`;
     const fullLeftRows = [quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
-    const mcpHealthy = mcpTotal - mcpParts.length;
     const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
     let mcpStr = '';
     if (mcpTotal > 0) {
@@ -305,12 +349,15 @@ process.stdin.on('end', () => {
     // ── Draw ──
     const h = c => `${DIM}${c}${R}`;
     const hl = (n) => '\u2500'.repeat(n);
+    // hl with marks: { idx: char } replaces positions within the ─ run
     const hlm = (n, marks) => {
       const arr = Array(n).fill('\u2500');
       if (marks) for (const k of Object.keys(marks)) { const i = +k; if (i >= 0 && i < n) arr[i] = marks[k]; }
       return arr.join('');
     };
-    // Content area starts at abs col 2; hl spans abs cols 1..LEFT_W → idx = 1 + memMcpCol
+    // Column offset (within hl span) where the mem/mcp │ sits.
+    // Content area starts at abs col 2 (│ + space). hl spans abs cols 1..LEFT_W.
+    // So hl idx = (2 + memMcpCol) - 1 = 1 + memMcpCol.
     const mcpHlIdx = memMcpCol >= 0 ? 1 + memMcpCol : -1;
     const output = [];
     let ri = 0; // right message index
@@ -352,6 +399,8 @@ process.stdin.on('end', () => {
     for (let j = 0; j < fullLeftRows.length; j++) {
       output.push(`${h('\u2502')} ${pad(fullLeftRows[j], LEFT_W - 2)} ${h('\u2502')}${rcell()}`);
       if (j < fullLeftRows.length - 1) {
+        // Divider between row j and j+1. If j+1 is mem/mcp → mark ┬ (stem goes down).
+        // If j is mem/mcp → mark ┴ (stem goes up).
         const marks = {};
         if (mcpHlIdx >= 0) {
           if (j + 1 === memMcpRowIdx) marks[mcpHlIdx] = '\u252c'; // ┬
