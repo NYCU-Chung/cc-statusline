@@ -192,7 +192,7 @@ process.stdin.on('end', () => {
     const fullLeftRows = [quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
     const mcpHealthy = mcpTotal - mcpParts.length;
-    const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(' ')}` : '';
+    const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
     let mcpStr = '';
     if (mcpTotal > 0) {
       const mcpLine = mcpParts.length
