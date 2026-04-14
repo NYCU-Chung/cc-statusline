@@ -138,7 +138,18 @@ process.stdin.on('end', () => {
 
     let resetInfo = '';
     if (i.rate_limits?.five_hour?.resets_at) {
-      const s = Math.max(0, i.rate_limits.five_hour.resets_at - Math.floor(Date.now() / 1000));
+      const nowSec = Math.floor(Date.now() / 1000);
+      const resetAt = i.rate_limits.five_hour.resets_at;
+      const FIVE_HR = 5 * 3600;
+      let s;
+      if (resetAt > nowSec) {
+        s = resetAt - nowSec;
+      } else {
+        // Payload's resets_at is stale (past). Auto-roll into the next 5h window
+        // so the countdown keeps ticking until Claude Code sends a fresh value.
+        const elapsed = nowSec - resetAt;
+        s = FIVE_HR - (elapsed % FIVE_HR);
+      }
       resetInfo = `${DIM}resets${R} ${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m`;
     }
 
