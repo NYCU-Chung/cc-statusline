@@ -118,8 +118,13 @@ process.stdin.on('end', () => {
     const cost = '$' + cum.cost.total.toFixed(2);
     const dur = fmtDur(Math.round(cum.dur.total / 60000));
     const ctx = Math.round(i.context_window?.used_percentage ?? 0);
-    const r5h = Math.round(i.rate_limits?.five_hour?.used_percentage ?? 0);
-    const r7d = Math.round(i.rate_limits?.seven_day?.used_percentage ?? 0);
+    // If a rate-limit window's reset has already passed in real time, payload's
+    // used_percentage is stale (payload only refreshes on message submit). Assume
+    // a new window started empty and show 0% until payload catches up.
+    const _nowSec = Math.floor(Date.now() / 1000);
+    const rolledOver = (rl) => rl?.resets_at && rl.resets_at <= _nowSec;
+    const r5h = Math.round(rolledOver(i.rate_limits?.five_hour) ? 0 : (i.rate_limits?.five_hour?.used_percentage ?? 0));
+    const r7d = Math.round(rolledOver(i.rate_limits?.seven_day) ? 0 : (i.rate_limits?.seven_day?.used_percentage ?? 0));
     const added = cum.add.total;
     const removed = cum.rm.total;
     const tokTotal = cum.tok.total;
