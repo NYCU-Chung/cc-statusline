@@ -23,11 +23,20 @@ process.stdin.on('end', () => {
           hookEventName: "UserPromptSubmit",
           additionalContext: `[Session summary update] Update the WHOLE-SESSION summary in ${summaryFile} using the Write tool.
 
-Not the most recent topic — a compact summary covering the entire session from its start to now. Include all major themes/tasks accomplished, in rough order. If the session started on topic A, moved to B, then C, the summary should list A/B/C — earlier items are NOT less important.
+A session-spanning summary, not just the most recent topic. Capture the session's overall trajectory from start to now.
 
-First Read ${summaryFile} (may not exist, that's fine) to see the prior summary. Then Write a new version that PRESERVES everything already captured and APPENDS any new topics that have emerged since. Never drop old topics just because recent activity is on a different subject.
+Steps:
+1. Read ${summaryFile} (may not exist).
+2. Mentally add the new topic(s) from recent activity.
+3. Rewrite so the result stays within HARD LIMIT 120 characters, single line, comma-separated phrases.
 
-Format: one line, comma-separated phrases. Target 60–120 chars. User's language. Silent — do not mention this in chat.`
+Compression rules when adding would exceed 120 chars (MANDATORY — this is not optional):
+- Merge related sub-topics into a broader theme (e.g. "A 修正, A 優化, A 測試" → "A 全面整理")
+- Drop the least-significant older item (small tweaks, minor fixes) to make room for the new one
+- Keep at least ONE earlier theme to preserve trajectory — do NOT collapse into just-the-latest
+- The most recent meaningful topic MUST appear
+
+Format: one line, comma-separated phrases, ≤120 chars. User's language. Write tool, silent — do not mention this in chat.`
         }
       };
       process.stdout.write(JSON.stringify(output));
