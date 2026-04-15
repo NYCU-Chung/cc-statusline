@@ -311,11 +311,13 @@ process.stdin.on('end', () => {
     const splitRow1L = `\u{1f4c1} ${shortDir}  ${linesInfo}`;
     const splitRow1R = `${CYAN}${model}${R}  ${effort}`;
     const splitRow2L = gitInfo || '';
-    const splitRow2R = `${cost} \u00b7 ${dur}  ${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}compacts${R} ${compactCount}`;
+    const splitRow2R = `${cost} \u00b7 ${dur}  ${DIM}tokens${R} ${fmtTok(tokTotal)}`;
 
     // Full-width left rows
-    const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
-    const fullLeftRows = [quotaLine];
+    const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
+    const ctxLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
+    const quotaLine = `${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
+    const fullLeftRows = [ctxLine, quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
     const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
     let mcpStr = '';
@@ -337,11 +339,14 @@ process.stdin.on('end', () => {
     }
     const sep = ` ${DIM}\u2192${R} `;
     if (fileParts.length) {
-      let fitted = [], usedW = 9;
+      // Per-filename cap: keep last chars so extension stays visible; truncate front with …
+      const shortFile = f => f.length > 25 ? '\u2026' + f.slice(-24) : f;
+      let fitted = [], usedW = 8; // "edited  " label width
       for (const f of fileParts) {
-        const fw = f.length + (fitted.length ? 3 : 0);
-        if (usedW + fw > 100) break;
-        fitted.push(f); usedW += fw;
+        const sf = shortFile(f);
+        const fw = sf.length + (fitted.length ? 3 : 0);
+        if (usedW + fw > 70) break; // tighter row width so LEFT_W stays lean
+        fitted.push(sf); usedW += fw;
       }
       if (fitted.length) fullLeftRows.push(`${DIM}edited${R}  ${fitted.join(sep)}`);
     }
@@ -387,7 +392,9 @@ process.stdin.on('end', () => {
       } catch(e) {}
     }
     if (!TERM_W) { try { TERM_W = parseInt(process.env.COLUMNS, 10) || 0; } catch(e) {} }
-    if (!TERM_W) TERM_W = 120;
+    // Fallback width — 120 is conservative; bump to 160 so wider terminals
+    // (common 160/180/210 cols) get more room for the message history column.
+    if (!TERM_W) TERM_W = 160;
     // Don't subtract padding — let the box fill full terminal width.
     // Claude Code's padding shifts our output right, but the box itself should be terminal-wide.
 
