@@ -142,28 +142,36 @@ process.stdin.on('end', () => {
       if (!rlSnaps[k]?.t || _nowSec - rlSnaps[k].t > STALE_SEC) delete rlSnaps[k];
     }
     try { fs.writeFileSync(rlSnapFile, JSON.stringify(rlSnaps)); } catch (e) {}
-    // Aggregate across sessions. Two modes:
-    //  (a) my payload is fresh (resets_at > now): match snapshots with SAME
-    //      resets_at (same window) and take MAX used_percentage.
-    //  (b) my payload is stale (resets_at <= now = window rolled over): my
-    //      local value is meaningless. Look at ALL snapshots whose resets_at
-    //      is still in the future (i.e. they're in a valid live window), and
-    //      take MAX of those. If none exist, display 0.
+    // Aggregate across sessions: different Claude Code sessions can hold
+    // cached rate_limits from DIFFERENT 5h windows (session cached old window,
+    // never sent a new message). Same-resets_at match was too strict and
+    // split sessions into isolated groups that each displayed their own MAX
+    // — desync. Instead:
+    //   1. Collect snapshots whose resets_at is still in the future (live).
+    //   2. Pick the group with the LATEST resets_at (most recent observation
+    //      of the current window — session made an API call most recently).
+    //   3. Return MAX used_percentage in that group.
+    //   4. If no live snapshots and my own payload is fresh → use payload.
+    //   5. Otherwise 0 (everyone rolled over, nothing to show).
     const aggMax = (field) => {
       const myRL = i.rate_limits?.[field];
-      const myResetAt = myRL?.resets_at;
-      const rolled = myResetAt && myResetAt <= _nowSec;
-      let max = 0;
+      const liveSnaps = [];
       for (const snap of Object.values(rlSnaps)) {
         const s = snap?.[field];
-        if (!s || typeof s.used_percentage !== 'number' || !s.resets_at) continue;
-        const sameWindow = rolled
-          ? s.resets_at > _nowSec               // any live-window snapshot
-          : s.resets_at === myResetAt;          // strict window match
-        if (sameWindow && s.used_percentage > max) max = s.used_percentage;
+        if (s && typeof s.used_percentage === 'number' && s.resets_at > _nowSec) {
+          liveSnaps.push(s);
+        }
       }
-      // Fallback to payload value when not rolled and no snapshot aggregation found
-      if (!rolled && max === 0 && myRL?.used_percentage > 0) return myRL.used_percentage;
+      if (liveSnaps.length === 0) {
+        return (myRL?.resets_at > _nowSec && typeof myRL.used_percentage === 'number')
+          ? myRL.used_percentage : 0;
+      }
+      let latestR = 0;
+      for (const s of liveSnaps) if (s.resets_at > latestR) latestR = s.resets_at;
+      let max = 0;
+      for (const s of liveSnaps) {
+        if (s.resets_at === latestR && s.used_percentage > max) max = s.used_percentage;
+      }
       return max;
     };
     const r5h = Math.round(aggMax('five_hour'));
