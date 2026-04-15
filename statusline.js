@@ -292,7 +292,7 @@ process.stdin.on('end', () => {
     let summary = '';
     try {
       const sf = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
-      summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 200);
+      summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 500);
     } catch (e) {}
     if (!summary) summary = sessionName || '';
     if (!summary && msgHistory.length) {
@@ -339,17 +339,40 @@ process.stdin.on('end', () => {
     const LRW_RECALC = LEFT_W - LLW - 1;
     const TOTAL = LEFT_W + 1 + MSG_W;
 
-    // Summary wrap (character-level, within LEFT_W - 2)
-    const maxSumW_calc = LEFT_W - 2;
+    // Summary wrap (character-level, matching actual render width = LEFT_W - 18)
+    // "session summary " label is 16 chars; subsequent rows indent 16 spaces.
+    // Content area on each row is LEFT_W - 2 (inside │ │) minus 16 label/indent.
+    const MAX_SUM_LINES = 4;
+    const maxSumW_calc = LEFT_W - 18;
     const sumLines = [];
-    { let curLine = '', curW = 0;
-      for (const ch of summary) {
+    { let curLine = '', curW = 0, truncated = false;
+      const chars = [...summary];
+      for (let i = 0; i < chars.length; i++) {
+        const ch = chars[i];
         const cw = isWide(ch.codePointAt(0)) ? 2 : 1;
-        if (curW + cw > maxSumW_calc && curLine) { sumLines.push(curLine); curLine = ch; curW = cw; }
-        else { curLine += ch; curW += cw; }
-        if (sumLines.length >= 4) break;
+        if (curW + cw > maxSumW_calc && curLine) {
+          if (sumLines.length + 1 >= MAX_SUM_LINES) {
+            // About to fill last line — reserve 1 cell for ellipsis if more content remains
+            const rest = chars.slice(i).join('');
+            if (rest.length > 0) {
+              // Trim curLine to leave room for ellipsis, then stop
+              while (curW + 1 > maxSumW_calc && curLine) {
+                const last = curLine[curLine.length - 1];
+                curW -= isWide(last.codePointAt(0)) ? 2 : 1;
+                curLine = curLine.slice(0, -1);
+              }
+              sumLines.push(curLine + '\u2026');
+              truncated = true;
+              break;
+            }
+          }
+          sumLines.push(curLine);
+          curLine = ch; curW = cw;
+        } else {
+          curLine += ch; curW += cw;
+        }
       }
-      if (curLine && sumLines.length < 4) sumLines.push(curLine);
+      if (!truncated && curLine && sumLines.length < MAX_SUM_LINES) sumLines.push(curLine);
       if (!sumLines.length) sumLines.push('');
     }
 
