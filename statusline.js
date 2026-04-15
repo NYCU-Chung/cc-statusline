@@ -292,10 +292,7 @@ process.stdin.on('end', () => {
     const splitRow2R = `${cost} \u00b7 ${dur}  ${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}compacts${R} ${compactCount}`;
 
     // Full-width left rows
-    const _renderT = new Date();
-    const _pad2 = n => String(n).padStart(2, '0');
-    const updatedAt = `${_pad2(_renderT.getHours())}:${_pad2(_renderT.getMinutes())}:${_pad2(_renderT.getSeconds())}`;
-    const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R}  ${DIM}\u27f3 ${updatedAt}${R}`;
+    const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R}`;
     const fullLeftRows = [quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
     const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
