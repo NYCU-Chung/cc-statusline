@@ -123,8 +123,39 @@ process.stdin.on('end', () => {
     // a new window started empty and show 0% until payload catches up.
     const _nowSec = Math.floor(Date.now() / 1000);
     const rolledOver = (rl) => rl?.resets_at && rl.resets_at <= _nowSec;
-    const r5h = Math.round(rolledOver(i.rate_limits?.five_hour) ? 0 : (i.rate_limits?.five_hour?.used_percentage ?? 0));
-    const r7d = Math.round(rolledOver(i.rate_limits?.seven_day) ? 0 : (i.rate_limits?.seven_day?.used_percentage ?? 0));
+
+    // Cross-session rate-limit aggregation: quotas are GLOBAL across all Claude
+    // Code sessions, but each session's payload only reflects its own latest
+    // observation. Share snapshots via ~/.claude/rate-limit-snapshots.json so
+    // every session can see the highest observed %used within the same window.
+    const rlSnapFile = path.join(os.homedir(), '.claude', 'rate-limit-snapshots.json');
+    let rlSnaps = {};
+    try { rlSnaps = JSON.parse(fs.readFileSync(rlSnapFile, 'utf8')); } catch (e) {}
+    // Write this session's current observation + prune entries >5min stale
+    rlSnaps[sid] = {
+      t: _nowSec,
+      five_hour: i.rate_limits?.five_hour || null,
+      seven_day: i.rate_limits?.seven_day || null,
+    };
+    const STALE_SEC = 300;
+    for (const k of Object.keys(rlSnaps)) {
+      if (!rlSnaps[k]?.t || _nowSec - rlSnaps[k].t > STALE_SEC) delete rlSnaps[k];
+    }
+    try { fs.writeFileSync(rlSnapFile, JSON.stringify(rlSnaps)); } catch (e) {}
+    // Aggregate: among snapshots with the SAME resets_at (same window), take max %
+    const aggMax = (field) => {
+      const myResetAt = i.rate_limits?.[field]?.resets_at;
+      if (!myResetAt) return i.rate_limits?.[field]?.used_percentage ?? 0;
+      let max = 0;
+      for (const snap of Object.values(rlSnaps)) {
+        if (snap?.[field]?.resets_at === myResetAt && typeof snap[field].used_percentage === 'number') {
+          if (snap[field].used_percentage > max) max = snap[field].used_percentage;
+        }
+      }
+      return max;
+    };
+    const r5h = Math.round(rolledOver(i.rate_limits?.five_hour) ? 0 : aggMax('five_hour'));
+    const r7d = Math.round(rolledOver(i.rate_limits?.seven_day) ? 0 : aggMax('seven_day'));
     const added = cum.add.total;
     const removed = cum.rm.total;
     const tokTotal = cum.tok.total;
