@@ -192,21 +192,23 @@ process.stdin.on('end', () => {
     } catch (e) {}
     const shortDir = (i.cwd || i.workspace?.current_dir || '').split(/[/\\]/).slice(-2).join('/');
 
-    let resetInfo = '';
-    if (i.rate_limits?.five_hour?.resets_at) {
+    // Compute seconds remaining for a rolling-window reset. If resets_at has
+    // already passed (payload stale), roll into the next window of period_sec.
+    const countdownSec = (resetAt, period_sec) => {
+      if (!resetAt) return null;
       const nowSec = Math.floor(Date.now() / 1000);
-      const resetAt = i.rate_limits.five_hour.resets_at;
-      const FIVE_HR = 5 * 3600;
-      let s;
-      if (resetAt > nowSec) {
-        s = resetAt - nowSec;
-      } else {
-        // Payload's resets_at is stale (past). Auto-roll into the next 5h window
-        // so the countdown keeps ticking until Claude Code sends a fresh value.
-        const elapsed = nowSec - resetAt;
-        s = FIVE_HR - (elapsed % FIVE_HR);
-      }
-      resetInfo = `${DIM}resets${R} ${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m`;
+      if (resetAt > nowSec) return resetAt - nowSec;
+      return period_sec - ((nowSec - resetAt) % period_sec);
+    };
+    let resetInfo = '';
+    {
+      const s = countdownSec(i.rate_limits?.five_hour?.resets_at, 5 * 3600);
+      if (s != null) resetInfo = `${DIM}resets${R} ${Math.floor(s/3600)}h${Math.floor((s%3600)/60)}m`;
+    }
+    let reset7dInfo = '';
+    {
+      const s = countdownSec(i.rate_limits?.seven_day?.resets_at, 7 * 86400);
+      if (s != null) reset7dInfo = `${DIM}resets${R} ${Math.floor(s/86400)}d${Math.floor((s%86400)/3600)}h`;
     }
 
     let effort = '';
@@ -312,7 +314,7 @@ process.stdin.on('end', () => {
     const splitRow2R = `${cost} \u00b7 ${dur}  ${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}compacts${R} ${compactCount}`;
 
     // Full-width left rows
-    const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R}`;
+    const quotaLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
     const fullLeftRows = [quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
     const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
