@@ -292,7 +292,7 @@ process.stdin.on('end', () => {
     let summary = '';
     try {
       const sf = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
-      summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 70);
+      summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 200);
     } catch (e) {}
     if (!summary) summary = sessionName || '';
     if (!summary && msgHistory.length) {

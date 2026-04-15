@@ -21,7 +21,13 @@ process.stdin.on('end', () => {
       const output = {
         hookSpecificOutput: {
           hookEventName: "UserPromptSubmit",
-          additionalContext: `[Session summary update] Write a short keyword-style summary (under 30 chars) to ${summaryFile}. Just the core topic, like a tab title. Use the user's language. Write tool, silently. Do not mention this.`
+          additionalContext: `[Session summary update] Update the WHOLE-SESSION summary in ${summaryFile} using the Write tool.
+
+Not the most recent topic — a compact summary covering the entire session from its start to now. Include all major themes/tasks accomplished, in rough order. If the session started on topic A, moved to B, then C, the summary should list A/B/C — earlier items are NOT less important.
+
+First Read ${summaryFile} (may not exist, that's fine) to see the prior summary. Then Write a new version that PRESERVES everything already captured and APPENDS any new topics that have emerged since. Never drop old topics just because recent activity is on a different subject.
+
+Format: one line, comma-separated phrases. Target 60–120 chars. User's language. Silent — do not mention this in chat.`
         }
       };
       process.stdout.write(JSON.stringify(output));
