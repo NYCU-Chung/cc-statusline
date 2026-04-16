@@ -10,16 +10,19 @@ A comprehensive statusline dashboard for Claude Code. See everything at a glance
 
 | Section | Info |
 |---------|------|
-| **session** | Auto-generated summary of what this session is about (updated by Claude every ~10 messages) |
-| **directory** | Current working directory + git branch + uncommitted file count |
-| **model** | Active model name, session cost, duration, thinking effort level |
-| **code** | Lines added/removed, total tokens consumed, compaction count |
-| **quotas** | Context window, 5h quota, 7d quota — each with a color-coded progress bar (green → yellow → red) + 5h reset countdown |
-| **agents** | Which subagents ran recently — ✓ done (with time ago) or ○ currently running |
+| **session summary** | Auto-generated whole-session summary (Claude rewrites it every ~10 messages with built-in compression so it stays under ~120 chars) |
+| **directory** | Current working directory + `+added -removed lines` |
+| **repo + branch** | `owner/repo` (parsed from `git remote`) + branch + `(N changed)` |
+| **cost** | `cost $TOTAL ($SESSION this session) · duration` — all-session lifetime spend (aggregated across every per-session cum file) plus current-session ticker |
+| **model** | Active model name + thinking effort level |
+| **tokens / context / compact** | Total tokens consumed · context window % · compact count (`compact 1 time` / `compact N times`) |
+| **5h-quota** | Color-coded bar (green → yellow → red) + auto-rolling `resets Xh Ym` countdown |
+| **7d-quota** | Color-coded bar + auto-rolling `resets Xd Yh` countdown |
+| **agents** | Subagents that ran in this session — `critic ✓ 5m ago`, parallel runs collapse to `critic ○×3` (running) or `critic ✓×2 5m ago` (done) |
 | **memory** | Which CLAUDE.md scopes are loaded (global / project / rules) |
-| **mcp** | MCP server health — how many active, which ones are down |
-| **edited** | Recently edited files in this session, newest first |
-| **history** | Right column showing the last 7 message exchanges (▶ you, ◀ Claude) |
+| **mcp** | MCP server health probed via `claude mcp list` — count of active + each unhealthy server with its state (`✘ failed`, `△ needs auth`) |
+| **edited** | Recently edited files in this session, newest first (long names front-truncated with `…`) |
+| **history** | Right column showing the last messages (▶ you, ◀ Claude), grows to fill terminal width |
 
 ## Install
 
@@ -84,20 +87,33 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `subagent-tracker.js` | SubagentStart / SubagentStop | Tracks which agents are running or finished |
+| `subagent-tracker.js` | SubagentStart / SubagentStop | Tracks which agents are running or finished, including concurrent invocations |
 | `compact-monitor.js` | PreCompact | Counts how many times context was compacted |
 | `file-tracker.js` | PostToolUse (Write/Edit) | Records recently edited files |
 | `message-tracker.js` | UserPromptSubmit / Stop | Caches recent messages for the history column |
-| `summary-updater.js` | UserPromptSubmit | Every ~10 messages, asks Claude to write a short session summary |
+| `summary-updater.js` | UserPromptSubmit | Every ~10 messages, asks Claude to rewrite the whole-session summary with compression rules |
+| `mcp-status-refresh.js` | (none — auto-spawned) | Statusline launches this in the background each render to refresh `~/.claude/mcp-status-cache.json` from `claude mcp list`. Self-skips if cache is fresh (<90s). |
+
+## How it survives resets and multi-session
+
+**Delta-based cost / duration / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd`, `total_duration_ms`, etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `/tmp/claude-cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward. Survives `--continue` and `--resume` because the cum file is keyed by session_id.
+
+**Cross-session quota aggregation.** Quotas are global across all your Claude Code sessions, but each session's payload only reflects its own cached observation. The statusline writes a snapshot to `~/.claude/rate-limit-snapshots.json` on every render and aggregates across sessions: it picks the snapshot with the latest live `resets_at` (most recent API observation) and shows MAX `used_percentage` from that group. All sessions converge on the same displayed %.
+
+**All-session cost.** The `cost $TOTAL ($SESSION this session)` figure aggregates `cost.total` across every `claude-cum-*.json` in tmpdir, so you see lifetime spend and current spend side by side.
+
+**Whole-session summary with compression.** The summary is meant to capture the entire session arc, not the latest topic. The summary-updater prompt enforces a 120-char cap with explicit compression rules (merge related sub-topics, drop the least-significant older item) so new topics displace less-significant old ones rather than the most-recent work being truncated.
 
 ## Without hooks
 
-The statusline works without the hooks — you just won't see agents, edited files, message history, compact count, or session summary. Quotas, cost, model, git, tokens, memory, and MCP all work from the built-in statusline JSON payload.
+The statusline works without the hooks — you just won't see agents, edited files, message history, compact count, or session summary. Quotas, cost, model, git, tokens, memory, and MCP all work from the built-in statusline JSON payload + the auto-spawned MCP refresher.
 
-## Known limitation
+## Known limitations
 
-Claude Code currently does not pass terminal width to statusline commands ([issue #22115](https://github.com/anthropics/claude-code/issues/22115)). On Windows, the script uses PowerShell as a fallback to detect width. The right border may not perfectly align with the terminal edge until this is fixed upstream.
-
+- Claude Code does not pass terminal width to statusline commands ([issue #22115](https://github.com/anthropics/claude-code/issues/22115)). On Windows, the script uses PowerShell as a fallback to detect width. The right border may not perfectly align with the terminal edge until this is fixed upstream.
+- MCP server state shown by the statusline comes from `claude mcp list` (a fresh probe at refresh time). Claude Code's `/mcp` UI shows the running session's cached state. The two can disagree if a server's connection has changed since the session started — the statusline reflects the latest probe, the UI reflects the session's view.
+- `claude mcp list` does not expose all built-in bridges (e.g. `claude-in-chrome`), so the statusline's MCP count can be lower than what `/mcp` shows.
+- Claude Code does not currently expose live MCP state in the statusline JSON payload ([issue #5511](https://github.com/anthropics/claude-code/issues/5511)) — once it does, the auto-spawned refresher won't be needed.
 
 ## License
 
