@@ -306,17 +306,29 @@ process.stdin.on('end', () => {
     if (branch) gitParts.push(`${MAGENTA}${branch}${R}${dirty ? ` ${DIM}(${dirty} changed)${R}` : ''}`);
     const gitInfo = gitParts.join(' ');
 
+    // Aggregate total cost across ALL sessions by walking every claude-cum-*.json
+    let allCost = 0;
+    try {
+      for (const f of fs.readdirSync(os.tmpdir())) {
+        if (f.startsWith('claude-cum-') && f.endsWith('.json')) {
+          try { allCost += JSON.parse(fs.readFileSync(path.join(os.tmpdir(), f), 'utf8')).cost?.total || 0; } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    const allCostStr = '$' + allCost.toFixed(2);
+
     // Split rows: [leftCol, rightCol]
     const linesInfo = `${GREEN}+${added}${R} ${RED}-${removed}${R} ${DIM}lines${R}`;
     const splitRow1L = `\u{1f4c1} ${shortDir}  ${linesInfo}`;
     const splitRow1R = `${CYAN}${model}${R}  ${effort}`;
     const splitRow2L = gitInfo || '';
-    const splitRow2R = `${cost} \u00b7 ${dur}  ${DIM}tokens${R} ${fmtTok(tokTotal)}`;
+    const splitRow2R = `${DIM}cost${R} ${allCostStr} ${DIM}(${R}${cost}${DIM} this session)${R} \u00b7 ${dur}`;
 
     // Full-width left rows
     const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
-    const ctxLine = `${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
-    const quotaLine = `${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}  ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
+    const ctxLine = `${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
+    // Wider gap between 5h and 7d so the row breathes
+    const quotaLine = `${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}     ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
     const fullLeftRows = [ctxLine, quotaLine];
     if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
     const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
