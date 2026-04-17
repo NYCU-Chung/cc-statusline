@@ -214,7 +214,17 @@ process.stdin.on('end', () => {
     let effort = '';
     try {
       const settings = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8'));
-      effort = `${DIM}effort${R} ${(settings.effortLevel||'default') === 'high' ? YELLOW : GREEN}${settings.effortLevel||'default'}${R}`;
+      const lvl = settings.effortLevel || 'default';
+      const ORANGE = '\x1b[38;5;208m';
+      const effortColor = {
+        low: DIM,
+        default: GREEN,
+        medium: GREEN,
+        high: YELLOW,
+        xhigh: ORANGE,
+        max: RED,
+      }[lvl] || GREEN;
+      effort = `${DIM}effort${R} ${effortColor}${lvl}${R}`;
     } catch (e) {}
 
     let agentLine = '';
