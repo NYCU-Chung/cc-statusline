@@ -1,4 +1,7 @@
-// UserPromptSubmit: every ~10 messages, nudge Claude to update session summary
+// UserPromptSubmit: every ~10 messages, nudge Claude to update session summary.
+// Also on every trigger, sync the latest summary into the transcript as a
+// `custom-title` entry so /resume picker shows a meaningful name instead of
+// "first user message" fallback.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -10,6 +13,34 @@ process.stdin.on('end', () => {
     const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
     const countFile = path.join(os.tmpdir(), `claude-msgcount-${sid}`);
     const summaryFile = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
+
+    // Sync current summary → transcript custom-title (takes effect in /resume picker).
+    // Skip if no transcript path or no summary yet. Only rewrite when it would change,
+    // so we don't bloat the transcript with duplicate entries.
+    try {
+      if (i.transcript_path && fs.existsSync(i.transcript_path) && fs.existsSync(summaryFile)) {
+        const sumRaw = fs.readFileSync(summaryFile, 'utf8').trim().split('\n')[0];
+        const title = sumRaw.length > 40 ? sumRaw.slice(0, 39) + '\u2026' : sumRaw;
+        if (title && i.session_id) {
+          // Find most recent existing custom-title in the transcript to avoid duplicates
+          const raw = fs.readFileSync(i.transcript_path, 'utf8');
+          let lastTitle = null;
+          for (let j = raw.length; j > 0; j = raw.lastIndexOf('\n', j - 1)) {
+            const start = raw.lastIndexOf('\n', j - 1) + 1;
+            const line = raw.slice(start, j);
+            if (line.includes('"type":"custom-title"')) {
+              try { lastTitle = JSON.parse(line).customTitle; } catch (e) {}
+              break;
+            }
+            if (start === 0) break;
+          }
+          if (lastTitle !== title) {
+            const entry = JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: i.session_id });
+            fs.appendFileSync(i.transcript_path, entry + '\n');
+          }
+        }
+      }
+    } catch (e) {}
 
     let count = 0;
     try { count = parseInt(fs.readFileSync(countFile, 'utf8').trim(), 10) || 0; } catch (e) {}

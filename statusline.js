@@ -316,12 +316,16 @@ process.stdin.on('end', () => {
     if (branch) gitParts.push(`${MAGENTA}${branch}${R}${dirty ? ` ${DIM}(${dirty} changed)${R}` : ''}`);
     const gitInfo = gitParts.join(' ');
 
-    // Aggregate total cost across ALL sessions by walking every claude-cum-*.json
-    let allCost = 0;
+    // Aggregate total cost + tokens across ALL sessions by walking every claude-cum-*.json
+    let allCost = 0, allTok = 0;
     try {
       for (const f of fs.readdirSync(os.tmpdir())) {
         if (f.startsWith('claude-cum-') && f.endsWith('.json')) {
-          try { allCost += JSON.parse(fs.readFileSync(path.join(os.tmpdir(), f), 'utf8')).cost?.total || 0; } catch (e) {}
+          try {
+            const c = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), f), 'utf8'));
+            allCost += c.cost?.total || 0;
+            allTok += c.tok?.total || 0;
+          } catch (e) {}
         }
       }
     } catch (e) {}
@@ -336,7 +340,7 @@ process.stdin.on('end', () => {
 
     // Full-width left rows
     const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
-    const ctxLine = `${DIM}tokens${R} ${fmtTok(tokTotal)}  ${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
+    const ctxLine = `${DIM}tokens${R} ${fmtTok(allTok)} ${DIM}(${R}${fmtTok(tokTotal)}${DIM} this session)${R}  ${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
     // Wider gap between 5h and 7d so the row breathes
     const quotaLine = `${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}     ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
     const fullLeftRows = [ctxLine, quotaLine];
