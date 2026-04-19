@@ -1,11 +1,13 @@
 ---
-description: Configure which rows cc-statusline shows
-argument-hint: [hide|show|only|toggle <row>...] | [reset] | (no args to list)
+description: Configure which rows cc-statusline shows (or turn it off entirely)
+argument-hint: [on|off] | [hide|show|only|toggle <row>...] | [reset] | (no args to list)
 ---
 
 # cc-statusline :: row configuration
 
-Manage the set of rows displayed by cc-statusline. Config lives at `~/.claude/cc-statusline-rows.json`; statusline.js reads it on every render and hides any row set to `false`.
+Manage cc-statusline. Config lives at `~/.claude/cc-statusline-rows.json`; statusline.js reads it on every render.
+
+A top-level `enabled` flag acts as the master switch — when `enabled: false`, the statusline prints nothing at all. Individual row flags control which sections appear when the statusline IS enabled.
 
 ## Valid row keys
 
@@ -29,10 +31,12 @@ $ARGUMENTS
 
 ## What to do
 
-1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat every row as enabled.
+1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` and every row as `true`.
 2. **Parse user input** from above:
    - No args → just list current state (step 4, no write).
-   - `reset` → set every key to `true`.
+   - `off` (no rows listed) → set `enabled: false` (master switch off). Keep row flags intact.
+   - `on` (no rows listed) → set `enabled: true`. Keep row flags intact.
+   - `reset` → set `enabled: true` and every row key to `true`.
    - `only <rows...>` → every listed row becomes `true`, every other key becomes `false`.
    - `hide <rows...>` → every listed row becomes `false`. Others unchanged.
    - `show <rows...>` → every listed row becomes `true`. Others unchanged.

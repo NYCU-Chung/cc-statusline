@@ -114,8 +114,10 @@ cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
 
 ```
 /cc-statusline:rows                      — 列出當前狀態
-/cc-statusline:rows hide agents edited   — 關掉指定的 row
-/cc-statusline:rows show agents          — 開啟指定的 row
+/cc-statusline:rows off                  — 總開關：整個 statusline 不顯示
+/cc-statusline:rows on                   — 總開關：重新啟用
+/cc-statusline:rows hide agents edited   — 關掉指定 row
+/cc-statusline:rows show agents          — 開啟指定 row
 /cc-statusline:rows only cost quota      — 只開這些、其他全關
 /cc-statusline:rows toggle history       — 翻轉狀態
 /cc-statusline:rows reset                — 全開

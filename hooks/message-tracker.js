@@ -12,40 +12,50 @@ process.stdin.on('end', () => {
     let msgs = [];
     try { msgs = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
 
+    // Dedup: Stop can fire multiple times per assistant turn, and duplicate user prompts
+    // can happen if the same text is submitted twice. Skip if same role+text as last entry.
+    const pushUnique = (r, t) => {
+      const last = msgs[msgs.length - 1];
+      if (last && last.r === r && last.t === t) return false;
+      msgs.push({ r, t });
+      msgs = msgs.slice(-30);
+      fs.writeFileSync(file, JSON.stringify(msgs));
+      return true;
+    };
+
     if (i.hook_event_name === 'UserPromptSubmit' && i.prompt) {
       const text = i.prompt.replace(/\n/g, ' ').trim();
-      if (text.length > 2) {
-        msgs.push({ r: 'u', t: text });
-        msgs = msgs.slice(-30); // keep last 14 (7 pairs)
-        fs.writeFileSync(file, JSON.stringify(msgs));
-      }
+      if (text.length > 2) pushUnique('u', text);
     } else if (i.hook_event_name === 'Stop') {
       // Read last assistant message from transcript tail
       const tp = i.transcript_path;
       if (tp && fs.existsSync(tp)) {
         const stat = fs.statSync(tp);
-        const readSize = Math.min(stat.size, 20000);
+        // Assistant entries can be very long (tool_results + long markdown).
+        // Read a generous tail so we definitely capture the full last assistant line.
+        const readSize = Math.min(stat.size, 500000);
         const buf = Buffer.alloc(readSize);
         const fd = fs.openSync(tp, 'r');
         fs.readSync(fd, buf, 0, readSize, stat.size - readSize);
         fs.closeSync(fd);
         const lines = buf.toString('utf8').split('\n');
+        // Walk backwards through assistant entries until we find one with real text content.
+        // Multi-step responses split into alternating text/tool_use entries — the very last
+        // line is often a pure tool_use with no text.
         for (let j = lines.length - 1; j >= 0; j--) {
           try {
             const entry = JSON.parse(lines[j]);
-            if (entry.type === 'assistant') {
-              const c = entry.message?.content;
-              let text = '';
-              if (Array.isArray(c)) text = c.filter(b => b.type === 'text').map(b => b.text).join(' ');
-              else if (typeof c === 'string') text = c;
-              text = text.replace(/\n/g, ' ').trim();
-              if (text.length > 5) {
-                msgs.push({ r: 'a', t: text });
-                msgs = msgs.slice(-30);
-                fs.writeFileSync(file, JSON.stringify(msgs));
-              }
+            if (entry.type !== 'assistant') continue;
+            const c = entry.message?.content;
+            let text = '';
+            if (Array.isArray(c)) text = c.filter(b => b.type === 'text').map(b => b.text).join(' ');
+            else if (typeof c === 'string') text = c;
+            text = text.replace(/\n/g, ' ').trim();
+            if (text.length > 5) {
+              pushUnique('a', text);
               break;
             }
+            // else keep looking — this assistant entry had only tool_use blocks
           } catch (e) {}
         }
       }

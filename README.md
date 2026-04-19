@@ -114,6 +114,8 @@ Don't want every row? Use the `/cc-statusline:rows` slash command (shipped with 
 
 ```
 /cc-statusline:rows                      — show current state
+/cc-statusline:rows off                  — master switch: hide statusline entirely
+/cc-statusline:rows on                   — master switch: re-enable
 /cc-statusline:rows hide agents edited   — turn listed rows off
 /cc-statusline:rows show agents          — turn listed rows on
 /cc-statusline:rows only cost quota      — enable listed, disable rest

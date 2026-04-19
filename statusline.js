@@ -13,10 +13,14 @@ process.stdin.on('end', () => {
     // Row visibility config (see /cc-statusline:rows). Missing file = everything on.
     const rowDefaults = { summary:1, dir:1, repo:1, model:1, cost:1, usage:1, quota:1, agents:1, memory_mcp:1, edited:1, history:1 };
     let rowCfg = { ...rowDefaults };
+    let cfgEnabled = true;
     try {
       const stored = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
       for (const k of Object.keys(rowDefaults)) if (k in stored) rowCfg[k] = !!stored[k];
+      if (stored.enabled === false) cfgEnabled = false;
     } catch (e) {}
+    // Master switch off — print nothing (Claude Code shows blank status area)
+    if (!cfgEnabled) { process.stdout.write(''); return; }
     const showRow = k => !!rowCfg[k];
 
     const R = '\x1b[0m', DIM = '\x1b[2m';
