@@ -36,6 +36,26 @@ process.stdin.on('end', () => {
       catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
     };
 
+    // CAS-style merge: read → mutate → atomic write → re-read → verify. If
+    // another writer raced past us between our write and the verify read,
+    // our change is gone and we retry with fresh state. Bounded to 5 tries
+    // to stay cheap under pathological contention; each round is ≈ 1ms.
+    // Returns the final state observed after verification.
+    const casMerge = (file, mutate, verify, maxRetries = 10) => {
+      let finalState = {};
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        let cur = {};
+        try { cur = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
+        mutate(cur);
+        atomicWrite(file, JSON.stringify(cur));
+        let after = {};
+        try { after = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
+        finalState = after;
+        if (verify(after)) return finalState;
+      }
+      return finalState;
+    };
+
     // Unicode East Asian Width: returns 2 for fullwidth/wide chars, 1 otherwise.
     // Based on UAX #11 (Unicode Standard Annex) + common emoji.
     const isWide = cp =>
@@ -159,17 +179,18 @@ process.stdin.on('end', () => {
       seven_day: i.rate_limits?.seven_day || null,
     };
     const STALE_SEC = 300;
-    // Re-read immediately before writing so concurrent sessions don't lose
-    // each other's snapshots: the earlier read + this re-read collapse the
-    // read-modify-write window to a few microseconds. We only overwrite our
-    // own sid entry and preserve everyone else's latest observation.
-    let rlSnaps = {};
-    try { rlSnaps = JSON.parse(fs.readFileSync(rlSnapFile, 'utf8')); } catch (e) {}
-    rlSnaps[sid] = mySnap;
-    for (const k of Object.keys(rlSnaps)) {
-      if (!rlSnaps[k]?.t || _nowSec - rlSnaps[k].t > STALE_SEC) delete rlSnaps[k];
-    }
-    atomicWrite(rlSnapFile, JSON.stringify(rlSnaps));
+    // CAS merge: multiple sessions hit this file every 30s so last-writer-
+    // wins would drop ~5% of entries under load (see commit 5b75b09). We
+    // retry until our own sid entry is visible after write.
+    const rlSnaps = casMerge(rlSnapFile,
+      (snaps) => {
+        snaps[sid] = mySnap;
+        for (const k of Object.keys(snaps)) {
+          if (!snaps[k]?.t || _nowSec - snaps[k].t > STALE_SEC) delete snaps[k];
+        }
+      },
+      (after) => after[sid]?.t === mySnap.t
+    );
     // Aggregate across sessions: different Claude Code sessions can hold
     // cached rate_limits from DIFFERENT 5h windows (session cached old window,
     // never sent a new message). Same-resets_at match was too strict and

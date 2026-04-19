@@ -7,6 +7,21 @@ const atomicWrite = (f, data) => {
   try { fs.writeFileSync(tmp, data); fs.renameSync(tmp, f); }
   catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
 };
+// CAS merge: Stop fires multiple times per turn and two hooks can race.
+// Retry until our appended entry is visible at the tail of a fresh read.
+const casMerge = (file, mutate, verify, maxRetries = 10) => {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let cur = [];
+    try { cur = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
+    const next = mutate(cur);
+    if (next === null) return false; // dedup rejected — no write needed
+    atomicWrite(file, JSON.stringify(next));
+    let after = [];
+    try { after = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
+    if (verify(after)) return true;
+  }
+  return false;
+};
 let d = '';
 process.stdin.on('data', c => d += c);
 process.stdin.on('end', () => {
@@ -16,19 +31,21 @@ process.stdin.on('end', () => {
     const file = path.join(os.tmpdir(), `claude-msgs-${sid}.json`);
 
     // Dedup: Stop can fire multiple times per assistant turn, and duplicate user prompts
-    // can happen if the same text is submitted twice. Re-read fresh state inside
-    // pushUnique so two concurrent hook processes don't both pass the dedup check
-    // and then overwrite each other's append.
-    const pushUnique = (r, t) => {
-      let msgs = [];
-      try { msgs = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
-      const last = msgs[msgs.length - 1];
-      if (last && last.r === r && last.t === t) return false;
-      msgs.push({ r, t });
-      msgs = msgs.slice(-30);
-      atomicWrite(file, JSON.stringify(msgs));
-      return true;
-    };
+    // can happen if the same text is submitted twice. CAS wraps read-check-write
+    // so two concurrent hook processes can't both pass the dedup gate and then
+    // overwrite each other's append.
+    const pushUnique = (r, t) => casMerge(file,
+      (msgs) => {
+        const last = msgs[msgs.length - 1];
+        if (last && last.r === r && last.t === t) return null; // dedup reject
+        msgs.push({ r, t });
+        return msgs.slice(-30);
+      },
+      (after) => {
+        const last = after[after.length - 1];
+        return last && last.r === r && last.t === t;
+      }
+    );
 
     if (i.hook_event_name === 'UserPromptSubmit' && i.prompt) {
       const text = i.prompt.replace(/\n/g, ' ').trim();
