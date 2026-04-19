@@ -9,6 +9,16 @@ process.stdin.on('data', c => d += c);
 process.stdin.on('end', () => {
   try {
     const i = JSON.parse(d);
+
+    // Row visibility config (see /cc-statusline:rows). Missing file = everything on.
+    const rowDefaults = { summary:1, dir:1, repo:1, model:1, cost:1, usage:1, quota:1, agents:1, memory_mcp:1, edited:1, history:1 };
+    let rowCfg = { ...rowDefaults };
+    try {
+      const stored = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
+      for (const k of Object.keys(rowDefaults)) if (k in stored) rowCfg[k] = !!stored[k];
+    } catch (e) {}
+    const showRow = k => !!rowCfg[k];
+
     const R = '\x1b[0m', DIM = '\x1b[2m';
     const CYAN = '\x1b[36m', GREEN = '\x1b[32m', RED = '\x1b[31m', YELLOW = '\x1b[33m', MAGENTA = '\x1b[35m', BLUE = '\x1b[34m';
 
@@ -331,20 +341,23 @@ process.stdin.on('end', () => {
     } catch (e) {}
     const allCostStr = '$' + allCost.toFixed(2);
 
-    // Split rows: [leftCol, rightCol]
+    // Split rows: [leftCol, rightCol] — each cell gated by /cc-statusline:rows config
     const linesInfo = `${GREEN}+${added}${R} ${RED}-${removed}${R} ${DIM}lines${R}`;
-    const splitRow1L = `\u{1f4c1} ${shortDir}  ${linesInfo}`;
-    const splitRow1R = `${CYAN}${model}${R}  ${effort}`;
-    const splitRow2L = gitInfo || '';
-    const splitRow2R = `${DIM}cost${R} ${allCostStr} ${DIM}(${R}${cost}${DIM} this session)${R} \u00b7 ${dur}`;
+    const splitRow1L = showRow('dir')   ? `\u{1f4c1} ${shortDir}  ${linesInfo}` : '';
+    const splitRow1R = showRow('model') ? `${CYAN}${model}${R}  ${effort}` : '';
+    const splitRow2L = showRow('repo')  ? (gitInfo || '') : '';
+    const splitRow2R = showRow('cost')  ? `${DIM}cost${R} ${allCostStr} ${DIM}(${R}${cost}${DIM} this session)${R} \u00b7 ${dur}` : '';
+    const hasSplitBlock = !!(splitRow1L || splitRow1R || splitRow2L || splitRow2R);
 
-    // Full-width left rows
+    // Full-width left rows — each row gated by /cc-statusline:rows config
     const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
     const ctxLine = `${DIM}tokens${R} ${fmtTok(allTok)} ${DIM}(${R}${fmtTok(tokTotal)}${DIM} this session)${R}  ${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
     // Wider gap between 5h and 7d so the row breathes
     const quotaLine = `${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}     ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
-    const fullLeftRows = [ctxLine, quotaLine];
-    if (agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
+    const fullLeftRows = [];
+    if (showRow('usage')) fullLeftRows.push(ctxLine);
+    if (showRow('quota')) fullLeftRows.push(quotaLine);
+    if (showRow('agents') && agentLine) fullLeftRows.push(`${DIM}agents${R}  ${agentLine}`);
     const memStr = memParts.length ? `${DIM}memory${R} ${memParts.join(`${DIM} \u00b7 ${R}`)}` : '';
     let mcpStr = '';
     if (mcpTotal > 0) {
@@ -355,7 +368,7 @@ process.stdin.on('end', () => {
     }
     // Track column offset of │ within content area (for border connectors ┬/┴)
     let memMcpRowIdx = -1, memMcpCol = -1;
-    if (memStr || mcpStr) {
+    if (showRow('memory_mcp') && (memStr || mcpStr)) {
       if (memStr && mcpStr) {
         memMcpCol = dw(memStr) + 1; // offset inside padded content area (after "memStr ")
       }
@@ -364,7 +377,7 @@ process.stdin.on('end', () => {
       fullLeftRows.push(combined);
     }
     const sep = ` ${DIM}\u2192${R} `;
-    if (fileParts.length) {
+    if (showRow('edited') && fileParts.length) {
       // Per-filename cap: keep last chars so extension stays visible; truncate front with …
       const shortFile = f => f.length > 25 ? '\u2026' + f.slice(-24) : f;
       let fitted = [], usedW = 8; // "edited  " label width
@@ -378,17 +391,21 @@ process.stdin.on('end', () => {
     }
 
     // Session summary — Claude-written file > session_name > first msg > sid
+    // Gated by /cc-statusline:rows — empty summary = summary block skipped entirely later
     let summary = '';
-    try {
-      const sf = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
-      summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 500);
-    } catch (e) {}
-    if (!summary) summary = sessionName || '';
-    if (!summary && msgHistory.length) {
-      const firstUser = msgHistory.find(m => m.r === 'u');
-      if (firstUser) summary = firstUser.t.replace(/\n/g, ' ').trim().slice(0, 60);
+    if (showRow('summary')) {
+      try {
+        const sf = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
+        summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 500);
+      } catch (e) {}
+      if (!summary) summary = sessionName || '';
+      if (!summary && msgHistory.length) {
+        const firstUser = msgHistory.find(m => m.r === 'u');
+        if (firstUser) summary = firstUser.t.replace(/\n/g, ' ').trim().slice(0, 60);
+      }
+      if (!summary) summary = `session ${sid.slice(0, 8)}`;
     }
-    if (!summary) summary = `session ${sid.slice(0, 8)}`;
+    const hasSummary = !!summary;
 
     // ── Measure widths ──
     let maxLL = Math.max(dw(splitRow1L), dw(splitRow2L));
@@ -426,7 +443,7 @@ process.stdin.on('end', () => {
 
     // Left = content-driven (never truncated). Right = fills remaining terminal space.
     const MSG_W = Math.max(0, TERM_W - LEFT_W - 3);
-    const showMsgs = MSG_W >= 15; // hide right column if too narrow
+    const showMsgs = showRow('history') && MSG_W >= 15; // hide right column if too narrow or user disabled
     const LRW_RECALC = LEFT_W - LLW - 1;
     const TOTAL = LEFT_W + 1 + MSG_W;
 
@@ -436,17 +453,15 @@ process.stdin.on('end', () => {
     const MAX_SUM_LINES = 4;
     const maxSumW_calc = LEFT_W - 18;
     const sumLines = [];
-    { let curLine = '', curW = 0, truncated = false;
+    if (hasSummary) { let curLine = '', curW = 0, truncated = false;
       const chars = [...summary];
       for (let i = 0; i < chars.length; i++) {
         const ch = chars[i];
         const cw = isWide(ch.codePointAt(0)) ? 2 : 1;
         if (curW + cw > maxSumW_calc && curLine) {
           if (sumLines.length + 1 >= MAX_SUM_LINES) {
-            // About to fill last line — reserve 1 cell for ellipsis if more content remains
             const rest = chars.slice(i).join('');
             if (rest.length > 0) {
-              // Trim curLine to leave room for ellipsis, then stop
               while (curW + 1 > maxSumW_calc && curLine) {
                 const last = curLine[curLine.length - 1];
                 curW -= isWide(last.codePointAt(0)) ? 2 : 1;
@@ -467,10 +482,12 @@ process.stdin.on('end', () => {
       if (!sumLines.length) sumLines.push('');
     }
 
-    // Count total rows: summary lines + 2 split rows + full rows + divider rows between full rows
-    const leftRowCount = sumLines.length + 2 + fullLeftRows.length;
-    // Also count divider rows (between full rows, and the split borders)
-    const totalSlots = leftRowCount + 2 + (fullLeftRows.length > 1 ? fullLeftRows.length - 1 : 0);
+    // Count total rows for right-column slot allocation
+    const splitRowsCount = hasSplitBlock ? 2 : 0;
+    const splitDividers = hasSplitBlock ? (1 + (fullLeftRows.length > 0 ? 1 : 0)) : 0;
+    const fullDividers = fullLeftRows.length > 1 ? fullLeftRows.length - 1 : 0;
+    const summarySplitDivider = (hasSummary && !hasSplitBlock && fullLeftRows.length > 0) ? 1 : 0;
+    const totalSlots = sumLines.length + splitRowsCount + fullLeftRows.length + splitDividers + fullDividers + summarySplitDivider;
 
     const rightMsgs = [];
     // Show the latest `totalSlots` messages (oldest-on-top within the window)
@@ -515,29 +532,33 @@ process.stdin.on('end', () => {
     };
 
     // Summary rows with label ("session summary " = 16 visible chars)
-    for (let si = 0; si < sumLines.length; si++) {
-      const label = si === 0 ? `${DIM}session summary${R} ` : ' '.repeat(16);
-      output.push(`${h('\u2502')} ${label}${pad(sumLines[si], LEFT_W - 18)} ${h('\u2502')}${rcell()}`);
+    if (hasSummary) {
+      for (let si = 0; si < sumLines.length; si++) {
+        const label = si === 0 ? `${DIM}session summary${R} ` : ' '.repeat(16);
+        output.push(`${h('\u2502')} ${label}${pad(sumLines[si], LEFT_W - 18)} ${h('\u2502')}${rcell()}`);
+      }
     }
 
-    // Split start
-    output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u252c')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
-
-    // Split row 1
-    output.push(`${h('\u2502')} ${pad(splitRow1L, LLW - 2)} ${h('\u2502')} ${pad(splitRow1R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
-
-    // Split row 2
-    output.push(`${h('\u2502')} ${pad(splitRow2L, LLW - 2)} ${h('\u2502')} ${pad(splitRow2R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
-
-    // Split merge
-    output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u2534')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
+    // Split block (4 rows: open, row1, row2, close) — skip entirely when no cells visible
+    if (hasSplitBlock) {
+      // Open: ├─┬─┤ if anything above, ┌─┬─┐ variant if top-of-box (but top border already emitted).
+      // So always ├─┬─┤ — its ├ ┤ act as dividers from whatever's above (or double-up with top border if nothing).
+      output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u252c')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
+      output.push(`${h('\u2502')} ${pad(splitRow1L, LLW - 2)} ${h('\u2502')} ${pad(splitRow1R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
+      output.push(`${h('\u2502')} ${pad(splitRow2L, LLW - 2)} ${h('\u2502')} ${pad(splitRow2R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
+      // Close: ├─┴─┤ only if more content follows; otherwise the bottom border handles the ┴.
+      if (fullLeftRows.length > 0) {
+        output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u2534')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
+      }
+    } else if (hasSummary && fullLeftRows.length > 0) {
+      // Transition divider between summary and full rows when no split block sits between them
+      output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+    }
 
     // Full-width left rows
     for (let j = 0; j < fullLeftRows.length; j++) {
       output.push(`${h('\u2502')} ${pad(fullLeftRows[j], LEFT_W - 2)} ${h('\u2502')}${rcell()}`);
       if (j < fullLeftRows.length - 1) {
-        // Divider between row j and j+1. If j+1 is mem/mcp → mark ┬ (stem goes down).
-        // If j is mem/mcp → mark ┴ (stem goes up).
         const marks = {};
         if (mcpHlIdx >= 0) {
           if (j + 1 === memMcpRowIdx) marks[mcpHlIdx] = '\u252c'; // ┬
@@ -547,13 +568,23 @@ process.stdin.on('end', () => {
       }
     }
 
-    // Bottom border — if mem/mcp is the LAST full row, extend ┴ downward too
+    // Bottom border
     const bottomMarks = {};
+    // If mem/mcp is the last full row, extend its ┴ down to the bottom
     if (mcpHlIdx >= 0 && memMcpRowIdx === fullLeftRows.length - 1) bottomMarks[mcpHlIdx] = '\u2534';
-    if (showMsgs) {
-      output.push(`${h('\u2514')}${h(hlm(LEFT_W, bottomMarks))}${h('\u2534')}${h(hl(MSG_W))}${h('\u2518')}`);
+    // If split block was the last thing emitted (no full rows after), the split divider lands on bottom
+    if (hasSplitBlock && fullLeftRows.length === 0) {
+      if (showMsgs) {
+        output.push(`${h('\u2514')}${h(hl(LLW))}${h('\u2534')}${h(hl(LRW_RECALC))}${h('\u2534')}${h(hl(MSG_W))}${h('\u2518')}`);
+      } else {
+        output.push(`${h('\u2514')}${h(hl(LLW))}${h('\u2534')}${h(hl(LRW_RECALC))}${h('\u2518')}`);
+      }
     } else {
-      output.push(`${h('\u2514')}${h(hlm(LEFT_W, bottomMarks))}${h('\u2518')}`);
+      if (showMsgs) {
+        output.push(`${h('\u2514')}${h(hlm(LEFT_W, bottomMarks))}${h('\u2534')}${h(hl(MSG_W))}${h('\u2518')}`);
+      } else {
+        output.push(`${h('\u2514')}${h(hlm(LEFT_W, bottomMarks))}${h('\u2518')}`);
+      }
     }
 
     process.stdout.write(output.join('\n'));
