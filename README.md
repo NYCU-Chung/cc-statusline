@@ -14,10 +14,10 @@ A comprehensive statusline dashboard for Claude Code. See everything at a glance
 | **directory** | Current working directory + `+added -removed lines` |
 | **repo + branch** | `owner/repo` (parsed from `git remote`) + branch + `(N changed)` |
 | **cost** | `cost $TOTAL ($SESSION this session) · duration` — all-session lifetime spend (aggregated across every per-session cum file) plus current-session ticker |
-| **model** | Active model name + thinking effort level |
-| **tokens / context / compact** | Total tokens consumed · context window % · compact count (`compact 1 time` / `compact N times`) |
-| **5h-quota** | Color-coded bar (green → yellow → red) + auto-rolling `resets Xh Ym` countdown |
-| **7d-quota** | Color-coded bar + auto-rolling `resets Xd Yh` countdown |
+| **model** | Active model name + effort level with 5-tier color ladder (`low` dim / `medium` green / `high` yellow / `xhigh` orange / `max` red) |
+| **tokens / context / compact** | `tokens TOTAL (SESSION this session)` (same all+session dual display as cost) · context window % · compact count (`compact 1 time` / `compact N times`) |
+| **5h-quota** | Color-coded bar (green → yellow → red) + auto-rolling `resets Xh Ym` countdown. Auto-zeros when `resets_at` passes real-world time (payload is stale until next message). |
+| **7d-quota** | Color-coded bar + auto-rolling `resets Xd Yh` countdown with same rollover behavior |
 | **agents** | Subagents that ran in this session — `critic ✓ 5m ago`, parallel runs collapse to `critic ○×3` (running) or `critic ✓×2 5m ago` (done) |
 | **memory** | Which CLAUDE.md scopes are loaded (global / project / rules) |
 | **mcp** | MCP server health probed via `claude mcp list` — count of active + each unhealthy server with its state (`✘ failed`, `△ needs auth`) |
@@ -100,9 +100,30 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 
 **Cross-session quota aggregation.** Quotas are global across all your Claude Code sessions, but each session's payload only reflects its own cached observation. The statusline writes a snapshot to `~/.claude/rate-limit-snapshots.json` on every render and aggregates across sessions: it picks the snapshot with the latest live `resets_at` (most recent API observation) and shows MAX `used_percentage` from that group. All sessions converge on the same displayed %.
 
-**All-session cost.** The `cost $TOTAL ($SESSION this session)` figure aggregates `cost.total` across every `claude-cum-*.json` in tmpdir, so you see lifetime spend and current spend side by side.
+**All-session cost + tokens.** The `cost $TOTAL ($SESSION this session)` and `tokens TOTAL (SESSION this session)` figures aggregate across every `claude-cum-*.json` in tmpdir, so you see lifetime spend / usage and current-session values side by side.
+
+**Time-based rate-limit rollover.** Claude Code's `rate_limits.*.resets_at` is frozen at the moment of the last API response. If the user leaves the session idle past a reset boundary, the payload says "87% used" even though the window has rolled over to 0%. The statusline checks `resets_at` against real time — past expiry, it auto-zeros the bar and computes the countdown against the next rolling 5h/7d boundary.
+
+**Auto session rename for `/resume` picker.** Claude Code's transcript JSONL supports a `{"type":"custom-title","customTitle":"..."}` entry that drives the `/resume` picker's display name. `summary-updater.js` injects the current summary (first 40 chars) as a custom-title entry every time it writes, so each session gets a meaningful name instead of a UUID — no more guessing which hash is which.
 
 **Whole-session summary with compression.** The summary is meant to capture the entire session arc, not the latest topic. The summary-updater prompt enforces a 120-char cap with explicit compression rules (merge related sub-topics, drop the least-significant older item) so new topics displace less-significant old ones rather than the most-recent work being truncated.
+
+## Customize which rows you see
+
+Don't want every row? Use the `/cc-statusline:rows` slash command (shipped with the plugin; saves to `~/.claude/cc-statusline-rows.json`):
+
+```
+/cc-statusline:rows                      — show current state
+/cc-statusline:rows hide agents edited   — turn listed rows off
+/cc-statusline:rows show agents          — turn listed rows on
+/cc-statusline:rows only cost quota      — enable listed, disable rest
+/cc-statusline:rows toggle history       — flip listed rows
+/cc-statusline:rows reset                — all on
+```
+
+11 row keys: `summary`, `dir`, `repo`, `model`, `cost`, `usage`, `quota`, `agents`, `memory_mcp`, `edited`, `history`.
+
+The layout auto-collapses when cells go empty — hide an entire column and the split layout merges into full-width rows; hide the whole split block and the top border fuses with the next section (no redundant horizontal lines).
 
 ## Without hooks
 

@@ -14,10 +14,10 @@ Claude Code 的完整 statusline 儀表板。所有資訊一目瞭然 — 不再
 | **directory** | 當前工作目錄 + `+新增 -刪除 lines` |
 | **repo + branch** | `owner/repo`（從 `git remote` 解析）+ branch + `(N changed)` |
 | **cost** | `cost $全部 ($本 session this session) · 持續時間` — 跨 session 累積總開銷 + 當前 session ticker |
-| **model** | 當前模型名稱 + thinking effort 等級 |
-| **tokens / context / compact** | 累積 tokens · context window 用量 · 壓縮次數（`compact 1 time` / `compact N times`）|
-| **5h-quota** | 顏色進度條（綠 → 黃 → 紅）+ 自動 rolling `resets Xh Ym` 倒數 |
-| **7d-quota** | 顏色進度條 + 自動 rolling `resets Xd Yh` 倒數 |
+| **model** | 當前模型名稱 + effort 等級（5 色階：`low` 灰 / `medium` 綠 / `high` 黃 / `xhigh` 橘 / `max` 紅）|
+| **tokens / context / compact** | `tokens 全部 (本 session this session)`（跟 cost 一樣雙顯）· context window 用量 · 壓縮次數（`compact 1 time` / `compact N times`）|
+| **5h-quota** | 顏色進度條（綠 → 黃 → 紅）+ 自動 rolling `resets Xh Ym` 倒數；`resets_at` 過期自動歸零，不會卡在舊值 |
+| **7d-quota** | 顏色進度條 + 自動 rolling `resets Xd Yh` 倒數（同 rollover 行為）|
 | **agents** | 本 session 跑過的 subagent — `critic ✓ 5m ago`，並行多個會合併成 `critic ○×3`（執行中）或 `critic ✓×2 5m ago`（完成）|
 | **memory** | 目前載入的 CLAUDE.md 範圍（global / project / rules）|
 | **mcp** | MCP server 健康狀態（透過 `claude mcp list` probe）— active 數 + 不健康 server 的狀態（`✘ failed`、`△ needs auth`）|
@@ -100,9 +100,30 @@ cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
 
 **跨 session quota 聚合。** Quota 是跨所有 Claude Code session 共享的，但每個 session 的 payload 只反映自己當下的快照。Statusline 在每次 render 把 snapshot 寫入 `~/.claude/rate-limit-snapshots.json`，並做跨 session 聚合 — 取出 `resets_at` 最晚（= 最近 API 觀察）的 snapshot 那組，取 MAX `used_percentage`。所有 session 都會收斂到同一個顯示值。
 
-**全 session 累積 cost。** `cost $TOTAL ($SESSION this session)` 那行的 `$TOTAL` 是把 tmpdir 裡所有 `claude-cum-*.json` 的 `cost.total` 加總，能同時看見終身花費 + 本 session 花費。
+**全 session 累積 cost + tokens。** `cost $TOTAL ($SESSION this session)` 和 `tokens TOTAL (SESSION this session)` 兩個欄位都把 tmpdir 裡所有 `claude-cum-*.json` 加總，能同時看見**終身**花費/用量 + **本 session** 當下值。
+
+**時間型 rate-limit 自動 rollover。** Claude Code 的 `rate_limits.*.resets_at` 凍結在最後一次 API 回應的那刻 — 如果你閒置過了 reset 邊界，payload 還是會說「已用 87%」，但實際上窗口早就 reset 了。Statusline 會比對 `resets_at` 跟實際時間，過期就自動歸零 bar 並接續倒數到下個 5h/7d 邊界。
+
+**自動 session 命名 for `/resume` picker。** Claude Code 的 transcript JSONL 支援 `{"type":"custom-title","customTitle":"..."}` entry，`/resume` picker 會讀它顯示名字。`summary-updater.js` 每次寫 summary 時會把前 40 字當成 `custom-title` 注入 transcript — `/resume` 裡每個 session 都有有意義的名字，不再是一排 UUID。
 
 **全 session 摘要 + 壓縮機制。** 摘要是要捕捉整個 session 的軌跡，不是最近話題。Summary-updater 的 prompt 強制 120 字上限並有明確壓縮規則（合併相關子話題、丟棄最不重要的舊項），讓新話題擠掉小事而不是讓最新工作被截斷。
+
+## 自訂要顯示哪些行
+
+不想看某些資訊？用 `/cc-statusline:rows` 斜線指令控制（plugin 裝起來自動註冊；設定存到 `~/.claude/cc-statusline-rows.json`）：
+
+```
+/cc-statusline:rows                      — 列出當前狀態
+/cc-statusline:rows hide agents edited   — 關掉指定的 row
+/cc-statusline:rows show agents          — 開啟指定的 row
+/cc-statusline:rows only cost quota      — 只開這些、其他全關
+/cc-statusline:rows toggle history       — 翻轉狀態
+/cc-statusline:rows reset                — 全開
+```
+
+11 個 row key：`summary`、`dir`、`repo`、`model`、`cost`、`usage`、`quota`、`agents`、`memory_mcp`、`edited`、`history`。
+
+空格子會自動合併 — 關掉一整欄會把 split 兩列合成全寬；整個 split 區塊全關，頂部邊框會融入下一個區塊（不會留多餘的水平線）。
 
 ## 不裝 hooks
 
