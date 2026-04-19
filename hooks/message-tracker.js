@@ -2,6 +2,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const atomicWrite = (f, data) => {
+  const tmp = `${f}.${process.pid}.${Date.now()}.tmp`;
+  try { fs.writeFileSync(tmp, data); fs.renameSync(tmp, f); }
+  catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
+};
 let d = '';
 process.stdin.on('data', c => d += c);
 process.stdin.on('end', () => {
@@ -9,17 +14,19 @@ process.stdin.on('end', () => {
     const i = JSON.parse(d);
     const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
     const file = path.join(os.tmpdir(), `claude-msgs-${sid}.json`);
-    let msgs = [];
-    try { msgs = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
 
     // Dedup: Stop can fire multiple times per assistant turn, and duplicate user prompts
-    // can happen if the same text is submitted twice. Skip if same role+text as last entry.
+    // can happen if the same text is submitted twice. Re-read fresh state inside
+    // pushUnique so two concurrent hook processes don't both pass the dedup check
+    // and then overwrite each other's append.
     const pushUnique = (r, t) => {
+      let msgs = [];
+      try { msgs = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
       const last = msgs[msgs.length - 1];
       if (last && last.r === r && last.t === t) return false;
       msgs.push({ r, t });
       msgs = msgs.slice(-30);
-      fs.writeFileSync(file, JSON.stringify(msgs));
+      atomicWrite(file, JSON.stringify(msgs));
       return true;
     };
 

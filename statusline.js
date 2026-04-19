@@ -26,6 +26,16 @@ process.stdin.on('end', () => {
     const R = '\x1b[0m', DIM = '\x1b[2m';
     const CYAN = '\x1b[36m', GREEN = '\x1b[32m', RED = '\x1b[31m', YELLOW = '\x1b[33m', MAGENTA = '\x1b[35m', BLUE = '\x1b[34m';
 
+    // Atomic write: write to a per-pid temp file then rename. On both POSIX
+    // (rename(2)) and Windows (MoveFileEx with REPLACE_EXISTING) this is a
+    // single atomic filesystem op, so concurrent readers never see a half-
+    // written file and the target is either the old content or the new.
+    const atomicWrite = (f, data) => {
+      const tmp = `${f}.${process.pid}.${Date.now()}.tmp`;
+      try { fs.writeFileSync(tmp, data); fs.renameSync(tmp, f); }
+      catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
+    };
+
     // Unicode East Asian Width: returns 2 for fullwidth/wide chars, 1 otherwise.
     // Based on UAX #11 (Unicode Standard Annex) + common emoji.
     const isWide = cp =>
@@ -128,7 +138,7 @@ process.stdin.on('end', () => {
       else { c.base = cur; } // reset detected — new baseline, don't touch total
     };
     step('cost', curCost); step('dur', curDur); step('add', curAdd); step('rm', curRm); step('tok', curTok);
-    try { fs.writeFileSync(cumPath, JSON.stringify(cum)); } catch (e) {}
+    atomicWrite(cumPath, JSON.stringify(cum));
     const cost = '$' + cum.cost.total.toFixed(2);
     const dur = fmtDur(Math.round(cum.dur.total / 60000));
     const ctx = Math.round(i.context_window?.used_percentage ?? 0);
@@ -143,19 +153,23 @@ process.stdin.on('end', () => {
     // observation. Share snapshots via ~/.claude/rate-limit-snapshots.json so
     // every session can see the highest observed %used within the same window.
     const rlSnapFile = path.join(os.homedir(), '.claude', 'rate-limit-snapshots.json');
-    let rlSnaps = {};
-    try { rlSnaps = JSON.parse(fs.readFileSync(rlSnapFile, 'utf8')); } catch (e) {}
-    // Write this session's current observation + prune entries >5min stale
-    rlSnaps[sid] = {
+    const mySnap = {
       t: _nowSec,
       five_hour: i.rate_limits?.five_hour || null,
       seven_day: i.rate_limits?.seven_day || null,
     };
     const STALE_SEC = 300;
+    // Re-read immediately before writing so concurrent sessions don't lose
+    // each other's snapshots: the earlier read + this re-read collapse the
+    // read-modify-write window to a few microseconds. We only overwrite our
+    // own sid entry and preserve everyone else's latest observation.
+    let rlSnaps = {};
+    try { rlSnaps = JSON.parse(fs.readFileSync(rlSnapFile, 'utf8')); } catch (e) {}
+    rlSnaps[sid] = mySnap;
     for (const k of Object.keys(rlSnaps)) {
       if (!rlSnaps[k]?.t || _nowSec - rlSnaps[k].t > STALE_SEC) delete rlSnaps[k];
     }
-    try { fs.writeFileSync(rlSnapFile, JSON.stringify(rlSnaps)); } catch (e) {}
+    atomicWrite(rlSnapFile, JSON.stringify(rlSnaps));
     // Aggregate across sessions: different Claude Code sessions can hold
     // cached rate_limits from DIFFERENT 5h windows (session cached old window,
     // never sent a new message). Same-resets_at match was too strict and
@@ -167,12 +181,18 @@ process.stdin.on('end', () => {
     //   3. Return MAX used_percentage in that group.
     //   4. If no live snapshots and my own payload is fresh → use payload.
     //   5. Otherwise 0 (everyone rolled over, nothing to show).
+    // Sanity cap: 5h window resets within 5h, 7d within 7d. Anything >8d in
+    // the future is garbage (malformed payload or bad test data) and would
+    // otherwise win the "latest resets_at" tiebreak and poison the display.
+    const MAX_FUTURE_SEC = 8 * 86400;
     const aggMax = (field) => {
       const myRL = i.rate_limits?.[field];
       const liveSnaps = [];
       for (const snap of Object.values(rlSnaps)) {
         const s = snap?.[field];
-        if (s && typeof s.used_percentage === 'number' && s.resets_at > _nowSec) {
+        if (s && typeof s.used_percentage === 'number'
+            && s.resets_at > _nowSec
+            && s.resets_at - _nowSec <= MAX_FUTURE_SEC) {
           liveSnaps.push(s);
         }
       }

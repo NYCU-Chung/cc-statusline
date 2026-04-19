@@ -8,6 +8,11 @@ const os = require('os');
 
 const CACHE = path.join(os.homedir(), '.claude', 'mcp-status-cache.json');
 const STALE_MS = 90 * 1000; // skip refresh if cache is fresh enough
+const atomicWrite = (f, data) => {
+  const tmp = `${f}.${process.pid}.${Date.now()}.tmp`;
+  try { fs.writeFileSync(tmp, data); fs.renameSync(tmp, f); }
+  catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
+};
 
 // Skip if cache exists and is fresh
 try {
@@ -63,4 +68,4 @@ for (const raw of out.split('\n')) {
   servers[name] = { status, detail: statusRaw };
 }
 
-fs.writeFileSync(CACHE, JSON.stringify({ updated: Date.now(), servers }, null, 2));
+atomicWrite(CACHE, JSON.stringify({ updated: Date.now(), servers }, null, 2));

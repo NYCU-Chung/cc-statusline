@@ -1,6 +1,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const atomicWrite = (f, data) => {
+  const tmp = `${f}.${process.pid}.${Date.now()}.tmp`;
+  try { fs.writeFileSync(tmp, data); fs.renameSync(tmp, f); }
+  catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
+};
 let d = '';
 process.stdin.on('data', c => d += c);
 process.stdin.on('end', () => {
@@ -14,7 +19,7 @@ process.stdin.on('end', () => {
     try { files = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
     const name = path.basename(fp);
     files = [name, ...files.filter(f => f !== name)].slice(0, 8);
-    fs.writeFileSync(file, JSON.stringify(files));
+    atomicWrite(file, JSON.stringify(files));
   } catch (e) {}
   process.stdout.write(d);
 });

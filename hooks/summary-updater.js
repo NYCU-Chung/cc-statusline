@@ -5,6 +5,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const atomicWrite = (f, data) => {
+  const tmp = `${f}.${process.pid}.${Date.now()}.tmp`;
+  try { fs.writeFileSync(tmp, data); fs.renameSync(tmp, f); }
+  catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} }
+};
 let d = '';
 process.stdin.on('data', c => d += c);
 process.stdin.on('end', () => {
@@ -45,7 +50,7 @@ process.stdin.on('end', () => {
     let count = 0;
     try { count = parseInt(fs.readFileSync(countFile, 'utf8').trim(), 10) || 0; } catch (e) {}
     count++;
-    fs.writeFileSync(countFile, String(count));
+    atomicWrite(countFile, String(count));
 
     // Every 10 messages, ask Claude to update summary
     if (count % 10 === 0) {
