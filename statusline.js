@@ -341,13 +341,33 @@ process.stdin.on('end', () => {
     } catch (e) {}
     const allCostStr = '$' + allCost.toFixed(2);
 
-    // Split rows: [leftCol, rightCol] — each cell gated by /cc-statusline:rows config
+    // Split rows: [leftCol, rightCol] — each cell gated by /cc-statusline:rows config.
+    // Empty cells collapse: if a whole column (left OR right across both rows) is empty,
+    // the remaining cells merge into full-width rows (no empty grid cells).
     const linesInfo = `${GREEN}+${added}${R} ${RED}-${removed}${R} ${DIM}lines${R}`;
-    const splitRow1L = showRow('dir')   ? `\u{1f4c1} ${shortDir}  ${linesInfo}` : '';
-    const splitRow1R = showRow('model') ? `${CYAN}${model}${R}  ${effort}` : '';
-    const splitRow2L = showRow('repo')  ? (gitInfo || '') : '';
-    const splitRow2R = showRow('cost')  ? `${DIM}cost${R} ${allCostStr} ${DIM}(${R}${cost}${DIM} this session)${R} \u00b7 ${dur}` : '';
-    const hasSplitBlock = !!(splitRow1L || splitRow1R || splitRow2L || splitRow2R);
+    let splitRow1L = showRow('dir')   ? `\u{1f4c1} ${shortDir}  ${linesInfo}` : '';
+    let splitRow1R = showRow('model') ? `${CYAN}${model}${R}  ${effort}` : '';
+    let splitRow2L = showRow('repo')  ? (gitInfo || '') : '';
+    let splitRow2R = showRow('cost')  ? `${DIM}cost${R} ${allCostStr} ${DIM}(${R}${cost}${DIM} this session)${R} \u00b7 ${dur}` : '';
+
+    // Collapsed "top rows" — full-width rows rendered BEFORE the split block (if any).
+    // Used when a whole column is empty (one side totally unused → no point in 2-cell layout).
+    const preSplitRows = [];
+    const leftEmpty = !splitRow1L && !splitRow2L;
+    const rightEmpty = !splitRow1R && !splitRow2R;
+    if (leftEmpty && (splitRow1R || splitRow2R)) {
+      if (splitRow1R) preSplitRows.push(splitRow1R);
+      if (splitRow2R) preSplitRows.push(splitRow2R);
+      splitRow1L = splitRow1R = splitRow2L = splitRow2R = '';
+    } else if (rightEmpty && (splitRow1L || splitRow2L)) {
+      if (splitRow1L) preSplitRows.push(splitRow1L);
+      if (splitRow2L) preSplitRows.push(splitRow2L);
+      splitRow1L = splitRow1R = splitRow2L = splitRow2R = '';
+    }
+    // Whole-empty row skip: if both cells of a row are empty, don't emit that row at all
+    const hasRow1 = !!(splitRow1L || splitRow1R);
+    const hasRow2 = !!(splitRow2L || splitRow2R);
+    const hasSplitBlock = hasRow1 || hasRow2;
 
     // Full-width left rows — each row gated by /cc-statusline:rows config
     const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
@@ -482,12 +502,19 @@ process.stdin.on('end', () => {
       if (!sumLines.length) sumLines.push('');
     }
 
-    // Count total rows for right-column slot allocation
-    const splitRowsCount = hasSplitBlock ? 2 : 0;
-    const splitDividers = hasSplitBlock ? (1 + (fullLeftRows.length > 0 ? 1 : 0)) : 0;
-    const fullDividers = fullLeftRows.length > 1 ? fullLeftRows.length - 1 : 0;
-    const summarySplitDivider = (hasSummary && !hasSplitBlock && fullLeftRows.length > 0) ? 1 : 0;
-    const totalSlots = sumLines.length + splitRowsCount + fullLeftRows.length + splitDividers + fullDividers + summarySplitDivider;
+    // Count total rows for right-column slot allocation.
+    // Split-open divider can be absorbed by the top border when split is the first section;
+    // bottom border can absorb the split-close when split is the last section.
+    const topMergeSplitSlot = hasSplitBlock && !hasSummary && preSplitRows.length === 0; // same condition as topMergeSplit
+    const splitContentRows = (hasRow1 ? 1 : 0) + (hasRow2 ? 1 : 0);
+    const splitOpenDivider = (hasSplitBlock && !topMergeSplitSlot) ? 1 : 0;
+    const splitCloseDivider = (hasSplitBlock && fullLeftRows.length > 0) ? 1 : 0;
+    const allFullRows = preSplitRows.length + fullLeftRows.length;
+    const fullDividers = Math.max(0, preSplitRows.length - 1) + (fullLeftRows.length > 1 ? fullLeftRows.length - 1 : 0);
+    let sectionDividers = 0;
+    if (hasSummary && (preSplitRows.length || hasSplitBlock || fullLeftRows.length)) sectionDividers++;
+    if (preSplitRows.length && fullLeftRows.length && !hasSplitBlock) sectionDividers++;
+    const totalSlots = sumLines.length + splitContentRows + allFullRows + splitOpenDivider + splitCloseDivider + fullDividers + sectionDividers;
 
     const rightMsgs = [];
     // Show the latest `totalSlots` messages (oldest-on-top within the window)
@@ -516,8 +543,14 @@ process.stdin.on('end', () => {
     const output = [];
     let ri = 0; // right message index
 
-    // Top border
-    if (showMsgs) {
+    // Top border — if the FIRST section is the split block, merge the split-open into
+    // the top border so there's no redundant ├─┬─┤ right after ┌─┐.
+    const topMergeSplit = hasSplitBlock && !hasSummary && preSplitRows.length === 0;
+    if (topMergeSplit) {
+      // top border with split column divider baked in: ┌───┬───┬───┐ (or ┌───┬───┐ if no msgs)
+      if (showMsgs) output.push(`${h('\u250c')}${h(hl(LLW))}${h('\u252c')}${h(hl(LRW_RECALC))}${h('\u252c')}${h(hl(MSG_W))}${h('\u2510')}`);
+      else          output.push(`${h('\u250c')}${h(hl(LLW))}${h('\u252c')}${h(hl(LRW_RECALC))}${h('\u2510')}`);
+    } else if (showMsgs) {
       output.push(`${h('\u250c')}${h(hl(LEFT_W))}${h('\u252c')}${h(hl(MSG_W))}${h('\u2510')}`);
     } else {
       output.push(`${h('\u250c')}${h(hl(LEFT_W))}${h('\u2510')}`);
@@ -531,7 +564,7 @@ process.stdin.on('end', () => {
       return ` ${content} ${h('\u2502')}`;
     };
 
-    // Summary rows with label ("session summary " = 16 visible chars)
+    // Summary rows
     if (hasSummary) {
       for (let si = 0; si < sumLines.length; si++) {
         const label = si === 0 ? `${DIM}session summary${R} ` : ' '.repeat(16);
@@ -539,19 +572,29 @@ process.stdin.on('end', () => {
       }
     }
 
-    // Split block (4 rows: open, row1, row2, close) — skip entirely when no cells visible
+    // pre-split full-width rows (when an entire split column collapsed to single-cell)
+    if (preSplitRows.length > 0) {
+      if (hasSummary) output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+      for (let j = 0; j < preSplitRows.length; j++) {
+        if (j > 0) output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+        output.push(`${h('\u2502')} ${pad(preSplitRows[j], LEFT_W - 2)} ${h('\u2502')}${rcell()}`);
+      }
+    }
+
+    // Split block — skip individual rows if both cells empty
     if (hasSplitBlock) {
-      // Open: ├─┬─┤ if anything above, ┌─┬─┐ variant if top-of-box (but top border already emitted).
-      // So always ├─┬─┤ — its ├ ┤ act as dividers from whatever's above (or double-up with top border if nothing).
-      output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u252c')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
-      output.push(`${h('\u2502')} ${pad(splitRow1L, LLW - 2)} ${h('\u2502')} ${pad(splitRow1R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
-      output.push(`${h('\u2502')} ${pad(splitRow2L, LLW - 2)} ${h('\u2502')} ${pad(splitRow2R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
-      // Close: ├─┴─┤ only if more content follows; otherwise the bottom border handles the ┴.
+      // Emit split-open divider only if NOT merged with top border
+      if (!topMergeSplit) {
+        output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u252c')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
+      }
+      if (hasRow1) output.push(`${h('\u2502')} ${pad(splitRow1L, LLW - 2)} ${h('\u2502')} ${pad(splitRow1R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
+      if (hasRow2) output.push(`${h('\u2502')} ${pad(splitRow2L, LLW - 2)} ${h('\u2502')} ${pad(splitRow2R, LRW_RECALC - 2)} ${h('\u2502')}${rcell()}`);
       if (fullLeftRows.length > 0) {
         output.push(`${h('\u251c')}${h(hl(LLW))}${h('\u2534')}${h(hl(LRW_RECALC))}${h('\u2524')}${rcell()}`);
       }
-    } else if (hasSummary && fullLeftRows.length > 0) {
-      // Transition divider between summary and full rows when no split block sits between them
+    } else if (!preSplitRows.length && hasSummary && fullLeftRows.length > 0) {
+      output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+    } else if (preSplitRows.length > 0 && fullLeftRows.length > 0) {
       output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
     }
 
