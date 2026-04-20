@@ -1,18 +1,18 @@
 {
   "description": "cc-statusline supporting hooks: subagent tracker, compact monitor, file tracker, message history, session summary updater.",
   "hooks": {
-    "SubagentStart": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/subagent-tracker.js" }] }],
-    "SubagentStop": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/subagent-tracker.js" }] }],
-    "PreCompact": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/compact-monitor.js" }] }],
+    "SubagentStart": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-tracker.js\"" }] }],
+    "SubagentStop": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent-tracker.js\"" }] }],
+    "PreCompact": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/compact-monitor.js\"" }] }],
     "UserPromptSubmit": [{ "hooks": [
-      { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/message-tracker.js" },
-      { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/summary-updater.js" }
+      { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/message-tracker.js\"" },
+      { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/summary-updater.js\"" }
     ]}],
     "Stop": [{ "matcher": "*", "hooks": [
-      { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/message-tracker.js" }
+      { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/message-tracker.js\"" }
     ]}],
     "PostToolUse": [{ "matcher": "Write|Edit", "hooks": [
-      { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/file-tracker.js" }
+      { "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/file-tracker.js\"" }
     ]}]
   }
 }
