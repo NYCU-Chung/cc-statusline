@@ -121,11 +121,23 @@ Don't want every row? Use the `/cc-statusline:rows` slash command (shipped with 
 /cc-statusline:rows only cost quota      — enable listed, disable rest
 /cc-statusline:rows toggle history       — flip listed rows
 /cc-statusline:rows reset                — all on
+/cc-statusline:rows compact              — toggle compact mode (hides summary, quota, agents, memory_mcp, usage)
+/cc-statusline:rows compact on           — enable compact mode
+/cc-statusline:rows autocompact on       — auto-enable compact mode when terminal height < 40 rows
 ```
 
 11 row keys: `summary`, `dir`, `repo`, `model`, `cost`, `usage`, `quota`, `agents`, `memory_mcp`, `edited`, `history`.
 
 The layout auto-collapses when cells go empty — hide an entire column and the split layout merges into full-width rows; hide the whole split block and the top border fuses with the next section (no redundant horizontal lines).
+
+### Compact mode for vertical displays
+
+If you use a vertical/portrait monitor or have limited terminal height, enable **compact mode** to save vertical space:
+
+- **Manual compact mode**: `/cc-statusline:rows compact on` — hides less-critical rows (summary, quota, agents, memory_mcp, usage), keeping only dir, repo, model, cost, edited, and history
+- **Auto-compact mode**: `/cc-statusline:rows autocompact on` — automatically enables compact mode when terminal height < 40 rows (perfect for tall/narrow displays)
+
+Compact mode reduces the statusline from ~12-15 rows to ~6-8 rows, making it ideal for vertical monitors or small terminal windows.
 
 ## Without hooks
 
