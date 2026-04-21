@@ -9,6 +9,17 @@ Manage cc-statusline. Config lives at `~/.claude/cc-statusline-rows.json`; statu
 
 A top-level `enabled` flag acts as the master switch — when `enabled: false`, the statusline prints nothing at all. Individual row flags control which sections appear when the statusline IS enabled.
 
+## Special configuration options
+
+Beyond individual row toggles, the following special options control statusline behavior:
+
+| option | type | description |
+|--------|------|-------------|
+| `enabled` | boolean | Master switch — `false` = no output at all |
+| `compact` | boolean | Compact mode — hides summary, quota, agents, memory_mcp, usage to save vertical space |
+| `autoCompact` | boolean | Auto-compact — enables compact mode when terminal height < 40 rows (ideal for vertical/portrait displays) |
+| `maxStatusLines` | number | Reserved for future use — limit max statusline rows (0 = no limit) |
+
 ## Valid row keys
 
 | key | what it controls |
@@ -31,21 +42,31 @@ $ARGUMENTS
 
 ## What to do
 
-1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` and every row as `true`.
+1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` and every row as `true`, special options as `false`.
 2. **Parse user input** from above:
    - No args → just list current state (step 4, no write).
    - `off` (no rows listed) → set `enabled: false` (master switch off). Keep row flags intact.
    - `on` (no rows listed) → set `enabled: true`. Keep row flags intact.
-   - `reset` → set `enabled: true` and every row key to `true`.
+   - `reset` → set `enabled: true`, every row key to `true`, and all special options to `false`.
+   - `compact` → toggle `compact` mode.
+   - `compact on` → set `compact: true`.
+   - `compact off` → set `compact: false`.
+   - `autocompact` or `auto-compact` → toggle `autoCompact` mode.
+   - `autocompact on` → set `autoCompact: true`.
+   - `autocompact off` → set `autoCompact: false`.
    - `only <rows...>` → every listed row becomes `true`, every other key becomes `false`.
    - `hide <rows...>` → every listed row becomes `false`. Others unchanged.
    - `show <rows...>` → every listed row becomes `true`. Others unchanged.
    - `toggle <rows...>` → flip each listed row's current value.
    - Accept row names comma/space separated, case-insensitive. Reject unknown keys with a message but still proceed with valid ones.
-3. **Write** the merged config back to the same file using the Write tool (pretty-printed JSON, keys in the canonical order shown in the table above).
-4. **Print** a short table of the resulting state — one line per key like:
+3. **Write** the merged config back to the same file using the Write tool (pretty-printed JSON, special options first, then row keys in the canonical order shown in the table above).
+4. **Print** a short table of the resulting state — special options first, then one line per row key like:
 
 ```
+  enabled     ✓ on
+  compact     ✗ off
+  autoCompact ✓ on
+
   summary     ✓ shown
   dir         ✓ shown
   repo        ✗ hidden

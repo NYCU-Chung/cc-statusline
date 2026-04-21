@@ -121,11 +121,23 @@ cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
 /cc-statusline:rows only cost quota      — 只開這些、其他全關
 /cc-statusline:rows toggle history       — 翻轉狀態
 /cc-statusline:rows reset                — 全開
+/cc-statusline:rows compact              — 切換 compact 模式（隱藏 summary、quota、agents、memory_mcp、usage）
+/cc-statusline:rows compact on           — 啟用 compact 模式
+/cc-statusline:rows autocompact on       — 當終端機高度 < 40 行時自動啟用 compact 模式
 ```
 
 11 個 row key：`summary`、`dir`、`repo`、`model`、`cost`、`usage`、`quota`、`agents`、`memory_mcp`、`edited`、`history`。
 
 空格子會自動合併 — 關掉一整欄會把 split 兩列合成全寬；整個 split 區塊全關，頂部邊框會融入下一個區塊（不會留多餘的水平線）。
+
+### 直立式螢幕的 Compact 模式
+
+如果你使用直立式螢幕（portrait monitor）或終端機高度有限，可以啟用 **compact 模式**來節省垂直空間：
+
+- **手動 compact 模式**: `/cc-statusline:rows compact on` — 隱藏較不重要的 row（summary、quota、agents、memory_mcp、usage），只保留 dir、repo、model、cost、edited、history
+- **自動 compact 模式**: `/cc-statusline:rows autocompact on` — 當終端機高度 < 40 行時自動啟用 compact 模式（非常適合直立式螢幕或小視窗）
+
+Compact 模式可以將 statusline 從 ~12-15 行壓縮到 ~6-8 行，非常適合直立式螢幕或終端機視窗高度受限的情況。
 
 ## 不裝 hooks
 

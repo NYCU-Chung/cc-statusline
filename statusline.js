@@ -14,13 +14,51 @@ process.stdin.on('end', () => {
     const rowDefaults = { summary:1, dir:1, repo:1, model:1, cost:1, usage:1, quota:1, agents:1, memory_mcp:1, edited:1, history:1 };
     let rowCfg = { ...rowDefaults };
     let cfgEnabled = true;
+    let compact = false;
+    let autoCompact = false;
+    let maxStatusLines = 0; // 0 = no limit
     try {
       const stored = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
       for (const k of Object.keys(rowDefaults)) if (k in stored) rowCfg[k] = !!stored[k];
       if (stored.enabled === false) cfgEnabled = false;
+      if (stored.compact === true) compact = true;
+      if (stored.autoCompact === true) autoCompact = true;
+      if (typeof stored.maxStatusLines === 'number' && stored.maxStatusLines > 0) {
+        maxStatusLines = stored.maxStatusLines;
+      }
     } catch (e) {}
     // Master switch off — print nothing (Claude Code shows blank status area)
     if (!cfgEnabled) { process.stdout.write(''); return; }
+
+    // Get terminal height early for autoCompact detection
+    let TERM_H_EARLY = process.stdout.rows || process.stderr.rows || 0;
+    if (!TERM_H_EARLY) {
+      if (process.platform === 'win32') {
+        try {
+          const r = spawnSync('powershell.exe', ['-NoProfile', '-c', '$Host.UI.RawUI.WindowSize.Height'], { encoding: 'utf8', timeout: 2000 });
+          TERM_H_EARLY = parseInt((r.stdout || '').trim(), 10) || 0;
+        } catch(e) {}
+      }
+      if (!TERM_H_EARLY) {
+        try { TERM_H_EARLY = parseInt(process.env.LINES, 10) || 0; } catch(e) {}
+      }
+    }
+
+    // Auto-compact mode: if terminal height < 40 rows, enable compact mode automatically
+    if (autoCompact && TERM_H_EARLY > 0 && TERM_H_EARLY < 40) {
+      compact = true;
+    }
+
+    // Compact mode: hide less-important rows (summary, quota, agents, memory_mcp, usage)
+    // to save vertical space on tall/narrow displays
+    if (compact) {
+      rowCfg.summary = false;
+      rowCfg.quota = false;
+      rowCfg.agents = false;
+      rowCfg.memory_mcp = false;
+      rowCfg.usage = false;
+    }
+
     const showRow = k => !!rowCfg[k];
 
     const R = '\x1b[0m', DIM = '\x1b[2m';
@@ -484,25 +522,35 @@ process.stdin.on('end', () => {
     let LEFT_W = Math.max(LEFT_INNER, maxFull);
     // Total box = terminal width exactly. No wider, no narrower.
     let TERM_W = process.stdout.columns || process.stderr.columns || 0;
+    let TERM_H = process.stdout.rows || process.stderr.rows || 0;
     if (!TERM_W && process.platform === 'win32') {
       try {
         const r = spawnSync('powershell.exe', ['-NoProfile', '-c', '$Host.UI.RawUI.WindowSize.Width'], { encoding: 'utf8', timeout: 2000 });
         TERM_W = parseInt((r.stdout || '').trim(), 10) || 0;
       } catch(e) {}
     }
-    if (!TERM_W) {
+    if (!TERM_H && process.platform === 'win32') {
+      try {
+        const r = spawnSync('powershell.exe', ['-NoProfile', '-c', '$Host.UI.RawUI.WindowSize.Height'], { encoding: 'utf8', timeout: 2000 });
+        TERM_H = parseInt((r.stdout || '').trim(), 10) || 0;
+      } catch(e) {}
+    }
+    if (!TERM_W || !TERM_H) {
       try {
         const tty = require('tty');
         const fd = fs.openSync('/dev/tty', 'r');
         const stream = new tty.ReadStream(fd);
-        TERM_W = stream.columns || 0;
+        if (!TERM_W) TERM_W = stream.columns || 0;
+        if (!TERM_H) TERM_H = stream.rows || 0;
         stream.destroy();
       } catch(e) {}
     }
     if (!TERM_W) { try { TERM_W = parseInt(process.env.COLUMNS, 10) || 0; } catch(e) {} }
+    if (!TERM_H) { try { TERM_H = parseInt(process.env.LINES, 10) || 0; } catch(e) {} }
     // Fallback width — 120 is conservative; bump to 160 so wider terminals
     // (common 160/180/210 cols) get more room for the message history column.
     if (!TERM_W) TERM_W = 160;
+    if (!TERM_H) TERM_H = 40;
     // Don't subtract padding — let the box fill full terminal width.
     // Claude Code's padding shifts our output right, but the box itself should be terminal-wide.
 
