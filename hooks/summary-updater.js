@@ -1,4 +1,6 @@
-// UserPromptSubmit: every ~10 messages, nudge Claude to update session summary.
+// UserPromptSubmit: every N user messages, nudge Claude to update session
+// summary. N defaults to 10 and can be overridden via `summaryInterval` in
+// ~/.claude/cc-statusline-rows.json.
 // Also on every trigger, sync the latest summary into the transcript as a
 // `custom-title` entry so /resume picker shows a meaningful name instead of
 // "first user message" fallback.
@@ -52,8 +54,18 @@ process.stdin.on('end', () => {
     count++;
     atomicWrite(countFile, String(count));
 
-    // Every 10 messages, ask Claude to update summary
-    if (count % 10 === 0) {
+    // User-configurable update interval. Clamp to >=1 so we never hit a
+    // divide-by-zero in the modulo check, and Math.floor coerces fractional
+    // values (e.g. 3.7 → 3) rather than silently rejecting them.
+    let interval = 10;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
+      if (typeof cfg.summaryInterval === 'number' && cfg.summaryInterval >= 1) {
+        interval = Math.floor(cfg.summaryInterval);
+      }
+    } catch (e) {}
+
+    if (count % interval === 0) {
       const output = {
         hookSpecificOutput: {
           hookEventName: "UserPromptSubmit",
