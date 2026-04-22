@@ -9,6 +9,15 @@ Manage cc-statusline. Config lives at `~/.claude/cc-statusline-rows.json`; statu
 
 A top-level `enabled` flag acts as the master switch — when `enabled: false`, the statusline prints nothing at all. Individual row flags control which sections appear when the statusline IS enabled.
 
+## Special configuration options
+
+Besides row toggles the file also holds non-row behaviour knobs:
+
+| key | type | default | description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | Master switch — `false` = no output at all |
+| `summaryInterval` | number | `10` | How many UserPromptSubmit events between session-summary nudges (minimum `1`) |
+
 ## Valid row keys
 
 | key | what it controls |
@@ -31,18 +40,19 @@ $ARGUMENTS
 
 ## What to do
 
-1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` and every row as `true`.
+1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` as `true`, every row as `true`, and `summaryInterval` as `10`.
 2. **Parse user input** from above:
    - No args → just list current state (step 4, no write).
    - `off` (no rows listed) → set `enabled: false` (master switch off). Keep row flags intact.
    - `on` (no rows listed) → set `enabled: true`. Keep row flags intact.
-   - `reset` → set `enabled: true` and every row key to `true`.
-   - `only <rows...>` → every listed row becomes `true`, every other key becomes `false`.
+   - `reset` → set `enabled: true`, every row key to `true`, and remove `summaryInterval` (falls back to default `10`).
+   - `summary-interval <N>` → set `summaryInterval: N`. Reject `N < 1`.
+   - `only <rows...>` → every listed row becomes `true`, every other row becomes `false`. Leave special options untouched.
    - `hide <rows...>` → every listed row becomes `false`. Others unchanged.
    - `show <rows...>` → every listed row becomes `true`. Others unchanged.
    - `toggle <rows...>` → flip each listed row's current value.
    - Accept row names comma/space separated, case-insensitive. Reject unknown keys with a message but still proceed with valid ones.
-3. **Write** the merged config back to the same file using the Write tool (pretty-printed JSON, keys in the canonical order shown in the table above).
+3. **Write** the merged config back to the same file using the Write tool (pretty-printed JSON: `enabled` first, then special options, then row keys in the canonical order shown in the table above).
 4. **Print** a short table of the resulting state — one line per key like:
 
 ```

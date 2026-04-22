@@ -125,6 +125,8 @@ cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
 
 11 個 row key：`summary`、`dir`、`repo`、`model`、`cost`、`usage`、`quota`、`agents`、`memory_mcp`、`edited`、`history`。
 
+同一個 config 檔也接受 `"summaryInterval": N`，控制 session 摘要多久重寫一次（預設每 `10` 則 user 訊息）。設 `5` 更密、設 `20` 更稀。
+
 空格子會自動合併 — 關掉一整欄會把 split 兩列合成全寬；整個 split 區塊全關，頂部邊框會融入下一個區塊（不會留多餘的水平線）。
 
 ## 不裝 hooks

@@ -125,6 +125,8 @@ Don't want every row? Use the `/cc-statusline:rows` slash command (shipped with 
 
 11 row keys: `summary`, `dir`, `repo`, `model`, `cost`, `usage`, `quota`, `agents`, `memory_mcp`, `edited`, `history`.
 
+The same config file also accepts `"summaryInterval": N` to change how often the session summary is rewritten (default every `10` user messages). Set `5` for denser updates, `20` for quieter ones.
+
 The layout auto-collapses when cells go empty — hide an entire column and the split layout merges into full-width rows; hide the whole split block and the top border fuses with the next section (no redundant horizontal lines).
 
 ## Without hooks
