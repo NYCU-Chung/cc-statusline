@@ -13,8 +13,9 @@ A comprehensive statusline dashboard for Claude Code. See everything at a glance
 | **session summary** | Auto-generated whole-session summary (Claude rewrites it every ~10 messages with built-in compression so it stays under ~120 chars) |
 | **directory** | Current working directory + `+added -removed lines` |
 | **repo + branch** | `owner/repo` (parsed from `git remote`) + branch + `(N changed)` |
-| **cost** | `cost $TOTAL ($SESSION this session) · duration` — all-session lifetime spend (aggregated across every per-session cum file) plus current-session ticker |
+| **cost** | `cost $TOTAL (<window>) · $SESSION (this session)` — all-session spend within a configurable rolling window (`aggWindowDays` in `~/.claude/cc-statusline-rows.json`, default 30, `0` = all time) plus the current-session ticker, rendered as parallel parenthetical annotations |
 | **model** | Active model name + effort level with 5-tier color ladder (`low` dim / `medium` green / `high` yellow / `xhigh` orange / `max` red) |
+| **duration** | Current session elapsed time — shares the model row area visually but toggles independently (`/cc-statusline:rows hide duration`) |
 | **tokens / context / compact** | `tokens TOTAL (SESSION this session)` (same all+session dual display as cost) · context window % · compact count (`compact 1 time` / `compact N times`) |
 | **5h-quota** | Color-coded bar (green → yellow → red) + auto-rolling `resets Xh Ym` countdown. Auto-zeros when `resets_at` passes real-world time (payload is stale until next message). |
 | **7d-quota** | Color-coded bar + auto-rolling `resets Xd Yh` countdown with same rollover behavior |
@@ -100,7 +101,7 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 
 **Cross-session quota aggregation.** Quotas are global across all your Claude Code sessions, but each session's payload only reflects its own cached observation. The statusline writes a snapshot to `~/.claude/rate-limit-snapshots.json` on every render and aggregates across sessions: it picks the snapshot with the latest live `resets_at` (most recent API observation) and shows MAX `used_percentage` from that group. All sessions converge on the same displayed %.
 
-**All-session cost + tokens.** The `cost $TOTAL ($SESSION this session)` and `tokens TOTAL (SESSION this session)` figures aggregate across every `claude-cum-*.json` in tmpdir, so you see lifetime spend / usage and current-session values side by side.
+**Rolling-window cost + tokens.** The `cost $TOTAL (past Nd) · $SESSION (this session)` and `tokens TOTAL (SESSION this session)` figures aggregate across `claude-cum-*.json` files whose mtime falls within `aggWindowDays` (default 30, configurable in `~/.claude/cc-statusline-rows.json`; set to `0` for all-time). Filenames are also filtered to the canonical 24-hex session-id shape so stray test fixtures can't poison the number. The default 30-day window mirrors Windows Storage Sense's default tmpdir eviction interval, so the total doesn't silently drop when the OS cleans old files.
 
 **Time-based rate-limit rollover.** Claude Code's `rate_limits.*.resets_at` is frozen at the moment of the last API response. If the user leaves the session idle past a reset boundary, the payload says "87% used" even though the window has rolled over to 0%. The statusline checks `resets_at` against real time — past expiry, it auto-zeros the bar and computes the countdown against the next rolling 5h/7d boundary.
 
@@ -123,7 +124,7 @@ Don't want every row? Use the `/cc-statusline:rows` slash command (shipped with 
 /cc-statusline:rows reset                — all on
 ```
 
-11 row keys: `summary`, `dir`, `repo`, `model`, `cost`, `usage`, `quota`, `agents`, `memory_mcp`, `edited`, `history`.
+12 row keys: `summary`, `dir`, `repo`, `model`, `duration`, `cost`, `usage`, `quota`, `agents`, `memory_mcp`, `edited`, `history`.
 
 The same config file also accepts `"summaryInterval": N` to change how often the session summary is rewritten (default every `10` user messages). Set `5` for denser updates, `20` for quieter ones.
 

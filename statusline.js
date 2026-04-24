@@ -11,7 +11,7 @@ process.stdin.on('end', () => {
     const i = JSON.parse(d);
 
     // Row visibility config (see /cc-statusline:rows). Missing file = everything on.
-    const rowDefaults = { summary:1, dir:1, repo:1, model:1, cost:1, usage:1, quota:1, agents:1, memory_mcp:1, edited:1, history:1 };
+    const rowDefaults = { summary:1, dir:1, repo:1, model:1, duration:1, cost:1, usage:1, quota:1, agents:1, memory_mcp:1, edited:1, history:1 };
     let rowCfg = { ...rowDefaults };
     let cfgEnabled = true;
     try {
@@ -371,29 +371,61 @@ process.stdin.on('end', () => {
     if (branch) gitParts.push(`${MAGENTA}${branch}${R}${dirty ? ` ${DIM}(${dirty} changed)${R}` : ''}`);
     const gitInfo = gitParts.join(' ');
 
-    // Aggregate total cost + tokens across ALL sessions by walking every claude-cum-*.json
+    // Aggregate cost + tokens across per-session cum files. Two filters:
+    //   1. Filename must match `claude-cum-<24-hex>.json` so stale test
+    //      fixtures or stray files can't poison the number.
+    //   2. mtime must be within the configured window (aggWindowDays, default
+    //      30, `0` = all time). Default picks 30 because Windows Storage
+    //      Sense clears tmpdir at 30 days anyway — matching that window
+    //      means the displayed total doesn't silently drop when the OS
+    //      evicts older files. Aligns with typical monthly billing view.
+    // Re-read config for aggWindowDays (rowCfg above holds only row flags).
+    let _aggDays = 30;
+    try {
+      const stored = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
+      if (typeof stored.aggWindowDays === 'number' && stored.aggWindowDays >= 0) {
+        _aggDays = Math.floor(stored.aggWindowDays);
+      }
+    } catch (e) {}
+    const AGG_MAX_AGE_MS = _aggDays > 0 ? _aggDays * 86400 * 1000 : Infinity;
+    const CUM_FILE_RE = /^claude-cum-[0-9a-f]{24}\.json$/;
+    const _aggNow = Date.now();
     let allCost = 0, allTok = 0;
     try {
       for (const f of fs.readdirSync(os.tmpdir())) {
-        if (f.startsWith('claude-cum-') && f.endsWith('.json')) {
-          try {
-            const c = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), f), 'utf8'));
-            allCost += c.cost?.total || 0;
-            allTok += c.tok?.total || 0;
-          } catch (e) {}
-        }
+        if (!CUM_FILE_RE.test(f)) continue;
+        const full = path.join(os.tmpdir(), f);
+        try {
+          if (_aggNow - fs.statSync(full).mtimeMs > AGG_MAX_AGE_MS) continue;
+          const c = JSON.parse(fs.readFileSync(full, 'utf8'));
+          allCost += c.cost?.total || 0;
+          allTok += c.tok?.total || 0;
+        } catch (e) {}
       }
     } catch (e) {}
     const allCostStr = '$' + allCost.toFixed(2);
+    // Window label rendered inside parens as an annotation: "(past 30 days)",
+    // "(past 7 days)", "(past 1 day)", or "(all time)". Parallels the
+    // "(this session)" annotation on the per-session figure.
+    const windowLabel = _aggDays === 0 ? 'all time'
+                      : _aggDays === 1 ? 'past 1 day'
+                      : `past ${_aggDays} days`;
 
     // Split rows: [leftCol, rightCol] — each cell gated by /cc-statusline:rows config.
     // Empty cells collapse: if a whole column (left OR right across both rows) is empty,
     // the remaining cells merge into full-width rows (no empty grid cells).
     const linesInfo = `${GREEN}+${added}${R} ${RED}-${removed}${R} ${DIM}lines${R}`;
     let splitRow1L = showRow('dir')   ? `\u{1f4c1} ${shortDir}  ${linesInfo}` : '';
-    let splitRow1R = showRow('model') ? `${CYAN}${model}${R}  ${effort}` : '';
+    // Independent visibility for model (name+effort) and duration. When both
+    // shown: `Sonnet  effort xhigh  \u00b7 17d 17hr`. If user hides model, duration
+    // still shows on its own. If user hides duration, model still shows.
+    const _modelPart = showRow('model') ? `${CYAN}${model}${R}  ${effort}` : '';
+    const _durPart   = showRow('duration') ? `${R}${dur}${R}` : '';
+    let splitRow1R = _modelPart && _durPart ? `${_modelPart}  ${DIM}\u00b7${R} ${_durPart}`
+                   : _modelPart ? _modelPart
+                   : _durPart;
     let splitRow2L = showRow('repo')  ? (gitInfo || '') : '';
-    let splitRow2R = showRow('cost')  ? `${DIM}cost${R} ${allCostStr} ${DIM}(${R}${cost}${DIM} this session)${R} \u00b7 ${dur}` : '';
+    let splitRow2R = showRow('cost')  ? `${DIM}cost${R} ${allCostStr} ${DIM}(${windowLabel})${R} ${DIM}·${R} ${cost} ${DIM}(this session)${R}` : '';
 
     // Collapsed "top rows" — full-width rows rendered BEFORE the split block (if any).
     // Used when a whole column is empty (one side totally unused → no point in 2-cell layout).

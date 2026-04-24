@@ -17,6 +17,7 @@ Besides row toggles the file also holds non-row behaviour knobs:
 |-----|------|---------|-------------|
 | `enabled` | boolean | `true` | Master switch — `false` = no output at all |
 | `summaryInterval` | number | `10` | How many UserPromptSubmit events between session-summary nudges (minimum `1`) |
+| `aggWindowDays` | number | `30` | Rolling window (in days) for the all-session cost + tokens aggregate. Only sessions whose cum file was modified within this window contribute. `0` = all time (no window). |
 
 ## Valid row keys
 
@@ -26,7 +27,8 @@ Besides row toggles the file also holds non-row behaviour knobs:
 | `dir`        | 📁 directory + `+added -removed lines` |
 | `repo`       | `owner/repo branch (N changed)` row |
 | `model`      | Model name + effort level |
-| `cost`       | `cost $TOTAL ($SESSION this session) · duration` |
+| `duration`   | Current session elapsed time (`Nd Nh` / `Nh Nm`) — shares the model row area visually but toggles independently |
+| `cost`       | `cost $TOTAL <window> ($SESSION this session)` — window label reflects `aggWindowDays` |
 | `usage`      | `tokens ... context ... compact ...` row |
 | `quota`      | `5h-quota` + `7d-quota` row with countdowns |
 | `agents`     | Subagent activity row |
@@ -45,8 +47,9 @@ $ARGUMENTS
    - No args → just list current state (step 4, no write).
    - `off` (no rows listed) → set `enabled: false` (master switch off). Keep row flags intact.
    - `on` (no rows listed) → set `enabled: true`. Keep row flags intact.
-   - `reset` → set `enabled: true`, every row key to `true`, and remove `summaryInterval` (falls back to default `10`).
+   - `reset` → set `enabled: true`, every row key to `true`, and remove `summaryInterval` and `aggWindowDays` (falls back to defaults `10` and `30`).
    - `summary-interval <N>` → set `summaryInterval: N`. Reject `N < 1`.
+   - `agg-window <N>` → set `aggWindowDays: N`. Accept `0` (all time). Reject negative.
    - `only <rows...>` → every listed row becomes `true`, every other row becomes `false`. Leave special options untouched.
    - `hide <rows...>` → every listed row becomes `false`. Others unchanged.
    - `show <rows...>` → every listed row becomes `true`. Others unchanged.
