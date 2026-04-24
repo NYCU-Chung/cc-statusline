@@ -27,16 +27,56 @@ A comprehensive statusline dashboard for Claude Code. See everything at a glance
 
 ## Install
 
-### One-command (plugin)
+### Option A — plugin install (recommended)
 
 ```
 claude plugin marketplace add NYCU-Chung/cc-statusline
 claude plugin install cc-statusline@cc-statusline
 ```
 
-Hooks are registered automatically. You still need to add the statusLine config manually:
+Hooks are registered automatically (via the plugin's own `hooks/hooks.json`), so you can **skip the Hook wiring section below**.
 
-Add this to `~/.claude/settings.json`:
+Then add the `statusLine` block to `~/.claude/settings.json` — Claude Code doesn't allow plugins to set this for you:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ${CLAUDE_PLUGIN_ROOT}/statusline.js",
+    "refreshInterval": 30
+  }
+}
+```
+
+### Option B — manual install (for hacking on the script)
+
+Pick the block that matches your shell. **`~` is expanded by bash/zsh before `git` sees it, but PowerShell and cmd don't expand it** — using `~` there makes `git clone` create a literal `~` folder (reported in [#6](https://github.com/NYCU-Chung/cc-statusline/issues/6)). Use `$HOME` / `%USERPROFILE%` instead.
+
+**bash / zsh / Git Bash on Windows**
+```bash
+git clone https://github.com/NYCU-Chung/cc-statusline ~/cc-statusline
+mkdir -p ~/.claude/hooks
+cp ~/cc-statusline/statusline.js ~/.claude/statusline.js
+cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
+```
+
+**PowerShell**
+```powershell
+git clone https://github.com/NYCU-Chung/cc-statusline "$HOME/cc-statusline"
+New-Item -ItemType Directory -Force "$HOME/.claude/hooks" | Out-Null
+Copy-Item "$HOME/cc-statusline/statusline.js" "$HOME/.claude/statusline.js"
+Copy-Item "$HOME/cc-statusline/hooks/*.js" "$HOME/.claude/hooks/"
+```
+
+**Windows cmd**
+```cmd
+git clone https://github.com/NYCU-Chung/cc-statusline "%USERPROFILE%\cc-statusline"
+mkdir "%USERPROFILE%\.claude\hooks" 2>nul
+copy "%USERPROFILE%\cc-statusline\statusline.js" "%USERPROFILE%\.claude\statusline.js"
+copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
+```
+
+Then add this `statusLine` block to `~/.claude/settings.json`:
 
 ```json
 {
@@ -48,19 +88,7 @@ Add this to `~/.claude/settings.json`:
 }
 ```
 
-Then copy the files:
-
-```bash
-git clone https://github.com/NYCU-Chung/cc-statusline ~/cc-statusline
-
-# Main statusline script
-cp ~/cc-statusline/statusline.js ~/.claude/statusline.js
-
-# Supporting hooks (optional but recommended — they feed data to the statusline)
-cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
-```
-
-### Hook wiring
+### Hook wiring (Option B only — plugin install does this automatically)
 
 Add these to your `~/.claude/settings.json` hooks section to enable all statusline features:
 
