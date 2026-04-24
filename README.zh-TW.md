@@ -27,16 +27,56 @@ Claude Code 的完整 statusline 儀表板。所有資訊一目瞭然 — 不再
 
 ## 安裝
 
-### 一鍵安裝（plugin）
+### 方式 A — Plugin 安裝（推薦）
 
 ```
 claude plugin marketplace add NYCU-Chung/cc-statusline
 claude plugin install cc-statusline@cc-statusline
 ```
 
-Hooks 會自動註冊。你只需要手動加入 statusLine 設定：
+Hooks 會自動註冊（plugin 自帶 `hooks/hooks.json`），所以**下面的 Hook 接線章節可跳過**。
 
-在 `~/.claude/settings.json` 加入：
+然後在 `~/.claude/settings.json` 加入 `statusLine` 區段 — Claude Code 不允許 plugin 自動寫入 statusLine：
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ${CLAUDE_PLUGIN_ROOT}/statusline.js",
+    "refreshInterval": 30
+  }
+}
+```
+
+### 方式 B — 手動安裝（想改腳本再用這個）
+
+依你用的 shell 選一塊貼上。**`~` 在 bash/zsh 會先被 shell 展開再傳給 git，但 PowerShell 和 cmd 不展開** — 用 `~` 會導致 `git clone` 建一個字面叫 `~` 的資料夾（[#6](https://github.com/NYCU-Chung/cc-statusline/issues/6) 回報）。在 PowerShell 請用 `$HOME`、cmd 用 `%USERPROFILE%`。
+
+**bash / zsh / Windows Git Bash**
+```bash
+git clone https://github.com/NYCU-Chung/cc-statusline ~/cc-statusline
+mkdir -p ~/.claude/hooks
+cp ~/cc-statusline/statusline.js ~/.claude/statusline.js
+cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
+```
+
+**PowerShell**
+```powershell
+git clone https://github.com/NYCU-Chung/cc-statusline "$HOME/cc-statusline"
+New-Item -ItemType Directory -Force "$HOME/.claude/hooks" | Out-Null
+Copy-Item "$HOME/cc-statusline/statusline.js" "$HOME/.claude/statusline.js"
+Copy-Item "$HOME/cc-statusline/hooks/*.js" "$HOME/.claude/hooks/"
+```
+
+**Windows cmd**
+```cmd
+git clone https://github.com/NYCU-Chung/cc-statusline "%USERPROFILE%\cc-statusline"
+mkdir "%USERPROFILE%\.claude\hooks" 2>nul
+copy "%USERPROFILE%\cc-statusline\statusline.js" "%USERPROFILE%\.claude\statusline.js"
+copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
+```
+
+然後在 `~/.claude/settings.json` 加入 `statusLine`：
 
 ```json
 {
@@ -48,19 +88,7 @@ Hooks 會自動註冊。你只需要手動加入 statusLine 設定：
 }
 ```
 
-然後複製檔案：
-
-```bash
-git clone https://github.com/NYCU-Chung/cc-statusline ~/cc-statusline
-
-# 主腳本
-cp ~/cc-statusline/statusline.js ~/.claude/statusline.js
-
-# 輔助 hooks（可選但建議安裝 — 它們把資料餵給 statusline）
-cp ~/cc-statusline/hooks/*.js ~/.claude/hooks/
-```
-
-### Hook 接線
+### Hook 接線（方式 B 才需要 — Plugin 安裝已自動註冊）
 
 在 `~/.claude/settings.json` 的 hooks 區段加入以下設定，啟用完整 statusline 功能：
 
