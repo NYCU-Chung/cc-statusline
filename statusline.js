@@ -129,7 +129,21 @@ process.stdin.on('end', () => {
 
     // ── Data ──
     const model = (i.model?.display_name || '?').replace('Claude ', '');
-    const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    // Stable session id derived from transcript filename. Claude Code's
+    // --continue / --resume reuse the same transcript JSONL but issue a
+    // fresh runtime `i.session_id` each launch, which would otherwise
+    // detach every per-session file (cum totals, message history, agent
+    // state, etc) from its prior accumulation. The transcript filename
+    // is the canonical UUID for the logical session, so we key off that
+    // and only fall back to `i.session_id` when no transcript exists yet.
+    let _logicalSid = i.session_id;
+    try {
+      if (i.transcript_path) {
+        const m = path.basename(i.transcript_path).match(/^([0-9a-fA-F-]+)\.jsonl$/);
+        if (m) _logicalSid = m[1];
+      }
+    } catch (e) {}
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
 
     // Claude Code sometimes resets total_cost / duration / lines (context compact,
     // auto-recovery, etc). Instead of freezing at max (which could over-report),
@@ -142,14 +156,21 @@ process.stdin.on('end', () => {
     const curRm = i.cost?.total_lines_removed ?? 0;
     const curTok = (i.context_window?.total_input_tokens ?? 0) + (i.context_window?.total_output_tokens ?? 0);
     const cumPath = path.join(os.tmpdir(), `claude-cum-${sid}.json`);
-    // Each field: { total: cumulative, base: last-observed payload value }
-    let cum = { cost:{total:0,base:0}, dur:{total:0,base:0}, add:{total:0,base:0}, rm:{total:0,base:0}, tok:{total:0,base:0} };
+    // Each step field: { total: cumulative, base: last-observed payload value }
+    const STEP_KEYS = ['cost', 'dur', 'add', 'rm', 'tok'];
+    let cum = {};
+    for (const k of STEP_KEYS) cum[k] = { total: 0, base: 0 };
     try {
       const stored = JSON.parse(fs.readFileSync(cumPath, 'utf8'));
-      // Migrate old flat format {cost,dur,add,rm,tok} → new {total,base}
-      for (const k of Object.keys(cum)) {
+      // Preserve every stored field — including ones managed by external
+      // hooks (activeMs, lastStopAt, …) that statusline doesn't compute
+      // but still has to round-trip through atomicWrite without erasing.
+      Object.assign(cum, stored);
+      // Then re-canonicalise step fields with migration from old flat format.
+      for (const k of STEP_KEYS) {
         if (stored[k] && typeof stored[k] === 'object') cum[k] = stored[k];
         else if (typeof stored[k] === 'number') cum[k] = { total: stored[k], base: stored[k] };
+        else cum[k] = { total: 0, base: 0 };
       }
     } catch (e) {}
     const step = (key, cur) => {
@@ -160,7 +181,11 @@ process.stdin.on('end', () => {
     step('cost', curCost); step('dur', curDur); step('add', curAdd); step('rm', curRm); step('tok', curTok);
     atomicWrite(cumPath, JSON.stringify(cum));
     const cost = '$' + cum.cost.total.toFixed(2);
-    const dur = fmtDur(Math.round(cum.dur.total / 60000));
+    // Active session time is maintained by hooks/active-time-tracker.js
+    // (Stop event), so we just read whichever value is live in cum.
+    // Falls back to cum.dur (API call latency total) if the hook isn't
+    // installed or hasn't fired yet.
+    const dur = fmtDur(Math.round((cum.activeMs > 0 ? cum.activeMs : cum.dur.total) / 60000));
     const ctx = Math.round(i.context_window?.used_percentage ?? 0);
     // If a rate-limit window's reset has already passed in real time, payload's
     // used_percentage is stale (payload only refreshes on message submit). Assume
