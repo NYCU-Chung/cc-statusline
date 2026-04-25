@@ -130,7 +130,7 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 **Delta-based 累積 cost / lines / tokens。** Claude Code 偶爾會在 session 中途 reset `cost.total_cost_usd` 等（context compact、auto-recovery 等）。Statusline 在 `/tmp/claude-cum-<sid>.json` 追蹤增量 — payload 值掉下時只重設 baseline，累積總值絕不倒退。
 
-**穩定的 session 鍵（跨 `--continue` / `--resume`）。** Claude Code 每次 `--continue` 都產生新的 runtime `session_id`，但 transcript JSONL 檔名跨整個邏輯 session 是穩定的。Statusline 和所有 supporting hook 都從 `path.basename(transcript_path)` 取 `<sid>`，不再被新 runtime sid 漂移影響 — 續開的 session 會接回原本的 cum / message / summary / agent / file / compact 檔，不會從 0 開始。
+**Per-session 鍵採用 transcript filename（防禦性設計）。** 所有 per-session 的 tmp 檔（cum、messages、summary、agents、files、compact count）都以 `path.basename(transcript_path)` 為鍵，沒有 transcript 時才 fallback 到 `session_id`。Transcript filename 是邏輯 session 的 canonical UUID、生命週期內不變，即使將來 `session_id` 語意改變也不會失效。（實測當前 Claude Code，`session_id` 跟 transcript filename UUID 是一致的 — 這個改動是 future-proof / 防禦性、不是修當前 bug。）
 
 **Hook-driven active session 時長。** `duration` row 是每個 turn 時長（`Stop` − `UserPromptSubmit` timestamp）累加的結果，由 `hooks/active-time-tracker.js` 維護。第一次跑該 hook 會從 transcript JSONL 用 user→assistant timestamp 配對 bootstrap 出歷史 active 時間。因為每段切片都被「turn 開著」邊界化，turn 外的 idle 自然不算 — 沒有 threshold、沒有 heuristic。
 

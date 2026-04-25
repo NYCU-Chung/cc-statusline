@@ -129,13 +129,14 @@ process.stdin.on('end', () => {
 
     // ── Data ──
     const model = (i.model?.display_name || '?').replace('Claude ', '');
-    // Stable session id derived from transcript filename. Claude Code's
-    // --continue / --resume reuse the same transcript JSONL but issue a
-    // fresh runtime `i.session_id` each launch, which would otherwise
-    // detach every per-session file (cum totals, message history, agent
-    // state, etc) from its prior accumulation. The transcript filename
-    // is the canonical UUID for the logical session, so we key off that
-    // and only fall back to `i.session_id` when no transcript exists yet.
+    // Defensive sid derivation from transcript filename. The transcript
+    // filename is the canonical UUID for the logical session and stays
+    // invariant for its entire lifetime, so per-session tmp files keyed
+    // off it are robust against any future change to how `i.session_id`
+    // is reported. Empirically on the current Claude Code build the two
+    // are already identical, so this is a future-proofing measure rather
+    // than a fix for an observed drift. Falls back to `i.session_id`
+    // only when no transcript path is available.
     let _logicalSid = i.session_id;
     try {
       if (i.transcript_path) {

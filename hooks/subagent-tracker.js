@@ -26,7 +26,8 @@ process.stdin.on('end', () => {
     const i = JSON.parse(d);
     const event = i.hook_event_name;
     if (event !== 'SubagentStart' && event !== 'SubagentStop') { process.stdout.write(d); return; }
-    // Stable sid from transcript filename (survives --continue / --resume).
+    // Sid keyed by transcript filename UUID — invariant for the logical session.
+    // Falls back to i.session_id when no transcript path is available.
     let _logicalSid = i.session_id;
     try {
       if (i.transcript_path) {
