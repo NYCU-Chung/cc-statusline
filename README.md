@@ -15,7 +15,7 @@ A comprehensive statusline dashboard for Claude Code. See everything at a glance
 | **repo + branch** | `owner/repo` (parsed from `git remote`) + branch + `(N changed)` |
 | **cost** | `cost $TOTAL (<window>) · $SESSION (this session)` — all-session spend within a configurable rolling window (`aggWindowDays` in `~/.claude/cc-statusline-rows.json`, default 30, `0` = all time) plus the current-session ticker, rendered as parallel parenthetical annotations |
 | **model** | Active model name + effort level with 5-tier color ladder (`low` dim / `medium` green / `high` yellow / `xhigh` orange / `max` red) |
-| **duration** | Current session elapsed time — shares the model row area visually but toggles independently (`/cc-statusline:rows hide duration`) |
+| **duration** | Active session time — sum of every turn's wall-clock duration (UserPromptSubmit → Stop). Inter-turn idle is naturally excluded, no idle threshold needed. Shares the model row area visually but toggles independently (`/cc-statusline:rows hide duration`). |
 | **tokens / context / compact** | `tokens TOTAL (SESSION this session)` (same all+session dual display as cost) · context window % · compact count (`compact 1 time` / `compact N times`) |
 | **5h-quota** | Color-coded bar (green → yellow → red) + auto-rolling `resets Xh Ym` countdown. Auto-zeros when `resets_at` passes real-world time (payload is stale until next message). |
 | **7d-quota** | Color-coded bar + auto-rolling `resets Xd Yh` countdown with same rollover behavior |
@@ -100,10 +100,12 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
     "PreCompact": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/compact-monitor.js" }] }],
     "UserPromptSubmit": [{ "hooks": [
       { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" },
-      { "type": "command", "command": "node ~/.claude/hooks/summary-updater.js" }
+      { "type": "command", "command": "node ~/.claude/hooks/summary-updater.js" },
+      { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
     "Stop": [{ "matcher": "*", "hooks": [
-      { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" }
+      { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" },
+      { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
     "PostToolUse": [{ "matcher": "Write|Edit", "hooks": [
       { "type": "command", "command": "node ~/.claude/hooks/file-tracker.js" }
@@ -121,11 +123,16 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 | `file-tracker.js` | PostToolUse (Write/Edit) | Records recently edited files |
 | `message-tracker.js` | UserPromptSubmit / Stop | Caches recent messages for the history column |
 | `summary-updater.js` | UserPromptSubmit | Every ~10 messages, asks Claude to rewrite the whole-session summary with compression rules |
+| `active-time-tracker.js` | UserPromptSubmit / Stop | Maintains active session time (sum of turn durations) — bootstraps from transcript on first run, then accumulates per turn |
 | `mcp-status-refresh.js` | (none — auto-spawned) | Statusline launches this in the background each render to refresh `~/.claude/mcp-status-cache.json` from `claude mcp list`. Self-skips if cache is fresh (<90s). |
 
 ## How it survives resets and multi-session
 
-**Delta-based cost / duration / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd`, `total_duration_ms`, etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `/tmp/claude-cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward. Survives `--continue` and `--resume` because the cum file is keyed by session_id.
+**Delta-based cost / duration / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd`, `total_duration_ms`, etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `/tmp/claude-cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward.
+
+**Stable session keying across `--continue` / `--resume`.** Claude Code issues a fresh runtime `session_id` on every `--continue`, but the transcript JSONL filename is stable across the entire logical session. Both statusline and every supporting hook derive their `<sid>` from `path.basename(transcript_path)` instead, so a continued session reattaches to its prior cum / message / summary / agent / file / compact files instead of starting from zero.
+
+**Active session time, hook-driven.** The `duration` row is the sum of (`Stop` timestamp − `UserPromptSubmit` timestamp) for every turn, maintained by `hooks/active-time-tracker.js`. The first run on a session bootstraps from the transcript JSONL by replaying user→assistant timestamp pairs. Because every slice is bounded by an open turn, idle time outside turns is naturally excluded — no threshold, no heuristic.
 
 **Cross-session quota aggregation.** Quotas are global across all your Claude Code sessions, but each session's payload only reflects its own cached observation. The statusline writes a snapshot to `~/.claude/rate-limit-snapshots.json` on every render and aggregates across sessions: it picks the snapshot with the latest live `resets_at` (most recent API observation) and shows MAX `used_percentage` from that group. All sessions converge on the same displayed %.
 

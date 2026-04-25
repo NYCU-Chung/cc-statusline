@@ -11,7 +11,15 @@ process.stdin.on('data', c => d += c);
 process.stdin.on('end', () => {
   try {
     const i = JSON.parse(d);
-    const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    // Stable sid from transcript filename (survives --continue / --resume).
+    let _logicalSid = i.session_id;
+    try {
+      if (i.transcript_path) {
+        const m = path.basename(i.transcript_path).match(/^([0-9a-fA-F-]+)\.jsonl$/);
+        if (m) _logicalSid = m[1];
+      }
+    } catch (e) {}
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
     const file = path.join(os.tmpdir(), `claude-compacts-${sid}.json`);
     let state = { count: 0, last: null };
     try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}

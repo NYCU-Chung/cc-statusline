@@ -26,7 +26,15 @@ process.stdin.on('end', () => {
     const i = JSON.parse(d);
     const event = i.hook_event_name;
     if (event !== 'SubagentStart' && event !== 'SubagentStop') { process.stdout.write(d); return; }
-    const sid = (i.session_id || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    // Stable sid from transcript filename (survives --continue / --resume).
+    let _logicalSid = i.session_id;
+    try {
+      if (i.transcript_path) {
+        const m = path.basename(i.transcript_path).match(/^([0-9a-fA-F-]+)\.jsonl$/);
+        if (m) _logicalSid = m[1];
+      }
+    } catch (e) {}
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
     const file = path.join(os.tmpdir(), `claude-agents-${sid}.json`);
 
     let name = i.agent_type;

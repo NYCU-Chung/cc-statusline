@@ -15,7 +15,7 @@ Claude Code 的完整 statusline 儀表板。所有資訊一目瞭然 — 不再
 | **repo + branch** | `owner/repo`（從 `git remote` 解析）+ branch + `(N changed)` |
 | **cost** | `cost $全部 (<視窗>) · $本 session (this session)` — 可配置的滾動視窗內所有活躍 session 累積開銷（`aggWindowDays` 設定於 `~/.claude/cc-statusline-rows.json`，預設 30 天、`0` = 不限時間），用括號註解對稱呈現兩個數字 |
 | **model** | 當前模型名稱 + effort 等級（5 色階：`low` 灰 / `medium` 綠 / `high` 黃 / `xhigh` 橘 / `max` 紅）|
-| **duration** | 當前 session 持續時間 — 視覺上跟 model row 排在一起、但 toggle 獨立（`/cc-statusline:rows hide duration`）|
+| **duration** | Active session 時長 — 累加每個 turn 的時長（UserPromptSubmit → Stop），turn 之間的 idle 自然不計入、不需要任何閾值。視覺上跟 model row 排在一起、但 toggle 獨立（`/cc-statusline:rows hide duration`）|
 | **tokens / context / compact** | `tokens 全部 (本 session this session)`（跟 cost 一樣雙顯）· context window 用量 · 壓縮次數（`compact 1 time` / `compact N times`）|
 | **5h-quota** | 顏色進度條（綠 → 黃 → 紅）+ 自動 rolling `resets Xh Ym` 倒數；`resets_at` 過期自動歸零，不會卡在舊值 |
 | **7d-quota** | 顏色進度條 + 自動 rolling `resets Xd Yh` 倒數（同 rollover 行為）|
@@ -100,10 +100,12 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
     "PreCompact": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/compact-monitor.js" }] }],
     "UserPromptSubmit": [{ "hooks": [
       { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" },
-      { "type": "command", "command": "node ~/.claude/hooks/summary-updater.js" }
+      { "type": "command", "command": "node ~/.claude/hooks/summary-updater.js" },
+      { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
     "Stop": [{ "matcher": "*", "hooks": [
-      { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" }
+      { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" },
+      { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
     "PostToolUse": [{ "matcher": "Write|Edit", "hooks": [
       { "type": "command", "command": "node ~/.claude/hooks/file-tracker.js" }
@@ -121,11 +123,16 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 | `file-tracker.js` | PostToolUse (Write/Edit) | 記錄最近編輯的檔案 |
 | `message-tracker.js` | UserPromptSubmit / Stop | 快取最近的對話供歷史欄顯示 |
 | `summary-updater.js` | UserPromptSubmit | 每 ~10 則訊息請 Claude 用壓縮規則重寫 whole-session 摘要 |
+| `active-time-tracker.js` | UserPromptSubmit / Stop | 維護 active session 時長（每個 turn 時長累加）— 第一次跑 bootstrap 從 transcript 還原歷史，之後 per-turn 累加 |
 | `mcp-status-refresh.js` | （沒有事件 — 自動觸發）| Statusline 在每次 render 時於背景 spawn，從 `claude mcp list` 更新 `~/.claude/mcp-status-cache.json`。cache 新於 90 秒就自動跳過 |
 
 ## 它如何撐過 reset 與多 session
 
-**Delta-based 累積 cost / duration / lines / tokens。** Claude Code 偶爾會在 session 中途 reset `cost.total_cost_usd`、`total_duration_ms` 等（context compact、auto-recovery 等）。Statusline 在 `/tmp/claude-cum-<sid>.json` 追蹤增量 — payload 值掉下時只重設 baseline，累積總值絕不倒退。`--continue`、`--resume` 都能延續，因為 cum 檔以 session_id 為 key。
+**Delta-based 累積 cost / lines / tokens。** Claude Code 偶爾會在 session 中途 reset `cost.total_cost_usd` 等（context compact、auto-recovery 等）。Statusline 在 `/tmp/claude-cum-<sid>.json` 追蹤增量 — payload 值掉下時只重設 baseline，累積總值絕不倒退。
+
+**穩定的 session 鍵（跨 `--continue` / `--resume`）。** Claude Code 每次 `--continue` 都產生新的 runtime `session_id`，但 transcript JSONL 檔名跨整個邏輯 session 是穩定的。Statusline 和所有 supporting hook 都從 `path.basename(transcript_path)` 取 `<sid>`，不再被新 runtime sid 漂移影響 — 續開的 session 會接回原本的 cum / message / summary / agent / file / compact 檔，不會從 0 開始。
+
+**Hook-driven active session 時長。** `duration` row 是每個 turn 時長（`Stop` − `UserPromptSubmit` timestamp）累加的結果，由 `hooks/active-time-tracker.js` 維護。第一次跑該 hook 會從 transcript JSONL 用 user→assistant timestamp 配對 bootstrap 出歷史 active 時間。因為每段切片都被「turn 開著」邊界化，turn 外的 idle 自然不算 — 沒有 threshold、沒有 heuristic。
 
 **跨 session quota 聚合。** Quota 是跨所有 Claude Code session 共享的，但每個 session 的 payload 只反映自己當下的快照。Statusline 在每次 render 把 snapshot 寫入 `~/.claude/rate-limit-snapshots.json`，並做跨 session 聚合 — 取出 `resets_at` 最晚（= 最近 API 觀察）的 snapshot 那組，取 MAX `used_percentage`。所有 session 都會收斂到同一個顯示值。
 

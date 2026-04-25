@@ -27,7 +27,7 @@ Besides row toggles the file also holds non-row behaviour knobs:
 | `dir`        | 📁 directory + `+added -removed lines` |
 | `repo`       | `owner/repo branch (N changed)` row |
 | `model`      | Model name + effort level |
-| `duration`   | Current session elapsed time (`Nd Nh` / `Nh Nm`) — shares the model row area visually but toggles independently |
+| `duration`   | Active session time (sum of turn durations from UserPromptSubmit → Stop, idle outside turns naturally excluded). Shares the model row area visually but toggles independently. |
 | `cost`       | `cost $TOTAL <window> ($SESSION this session)` — window label reflects `aggWindowDays` |
 | `usage`      | `tokens ... context ... compact ...` row |
 | `quota`      | `5h-quota` + `7d-quota` row with countdowns |
