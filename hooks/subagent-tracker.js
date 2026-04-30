@@ -35,7 +35,7 @@ process.stdin.on('end', () => {
         if (m) _logicalSid = m[1];
       }
     } catch (e) {}
-    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
     const file = path.join(os.tmpdir(), `claude-agents-${sid}.json`);
 
     let name = i.agent_type;

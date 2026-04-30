@@ -36,7 +36,7 @@ process.stdin.on('end', () => {
         if (m) _logicalSid = m[1];
       }
     } catch (e) {}
-    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
     const file = path.join(os.tmpdir(), `claude-msgs-${sid}.json`);
 
     // Dedup: Stop can fire multiple times per assistant turn, and duplicate user prompts

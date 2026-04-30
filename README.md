@@ -103,7 +103,7 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
       { "type": "command", "command": "node ~/.claude/hooks/summary-updater.js" },
       { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
-    "Stop": [{ "matcher": "*", "hooks": [
+    "Stop": [{ "matcher": ".*", "hooks": [
       { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" },
       { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
@@ -128,7 +128,7 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 
 ## How it survives resets and multi-session
 
-**Delta-based cost / duration / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd`, `total_duration_ms`, etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `/tmp/claude-cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward.
+**Delta-based cost / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd` etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `/tmp/claude-cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward. (Active session time follows a separate path — see "Per-feature state isolation" below.)
 
 **Defensive per-session keying via transcript filename.** Every per-session tmp file (cum, messages, summary, agents, files, compact count) is keyed by `path.basename(transcript_path)` rather than the runtime `session_id` payload, falling back to `session_id` only when no transcript is present. The transcript filename is the canonical UUID of the logical session and is invariant for its lifetime, so this keying stays correct even if `session_id` semantics ever shift. (Empirically on the current Claude Code build, `session_id` and the transcript filename UUID are already identical — the choice is preventive, not a bug fix.)
 
