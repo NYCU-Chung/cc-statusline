@@ -380,9 +380,10 @@ process.stdin.on('end', () => {
     } catch(e) {}
 
     // MCP: read mcp-status-cache.json (populated by mcp-status-refresh.js → `claude mcp list`)
+    const mcpCachePath = path.join(os.homedir(), '.claude', 'mcp-status-cache.json');
     let mcpParts = [], mcpTotal = 0, mcpHealthy = 0;
     try {
-      const mcpCache = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'mcp-status-cache.json'), 'utf8'));
+      const mcpCache = JSON.parse(fs.readFileSync(mcpCachePath, 'utf8'));
       const servers = mcpCache.servers || {};
       for (const [name, info] of Object.entries(servers)) {
         mcpTotal++;
@@ -397,19 +398,30 @@ process.stdin.on('end', () => {
         }
       }
     } catch(e) {}
-    // Fire background refresh so next render has fresh data (the refresher self-skips if cache fresh).
-    // Pass cwd so `claude mcp list` consistently sees the same MCP set as the running session.
+    // Fire background refresh so next render has fresh data — but only if
+    // the cache is actually stale. The refresher itself is also self-
+    // skipping, but the wrapper spawn (node + module load + statSync) used
+    // to run every render = ~960 spawns per 8h. Cheap stale check up front
+    // collapses that to a handful of real refreshes per hour.
+    const MCP_REFRESH_INTERVAL_MS = 90 * 1000;
+    let mcpCacheStale = true;
     try {
-      const { spawn } = require('child_process');
-      const refresher = path.join(os.homedir(), '.claude', 'hooks', 'mcp-status-refresh.js');
-      if (fs.existsSync(refresher)) {
-        // Don't pass cwd — let refresher default to home dir for a stable global view.
-        // Passing the session cwd caused the list to flicker based on project-scoped .mcp.json
-        // (e.g. phantom 'discord'/'line' entries appearing when spawned from plugin folders).
-        const p = spawn(process.execPath, [refresher], { detached: true, stdio: 'ignore', windowsHide: true });
-        p.unref();
-      }
-    } catch(e) {}
+      const cacheStat = fs.statSync(mcpCachePath);
+      mcpCacheStale = (Date.now() - cacheStat.mtimeMs) > MCP_REFRESH_INTERVAL_MS;
+    } catch(e) { /* no cache yet — definitely stale */ }
+    if (mcpCacheStale) {
+      try {
+        const { spawn } = require('child_process');
+        const refresher = path.join(os.homedir(), '.claude', 'hooks', 'mcp-status-refresh.js');
+        if (fs.existsSync(refresher)) {
+          // Don't pass cwd — let refresher default to home dir for a stable global view.
+          // Passing the session cwd caused the list to flicker based on project-scoped .mcp.json
+          // (e.g. phantom 'discord'/'line' entries appearing when spawned from plugin folders).
+          const p = spawn(process.execPath, [refresher], { detached: true, stdio: 'ignore', windowsHide: true });
+          p.unref();
+        }
+      } catch(e) {}
+    }
 
     // ── Build left-side content ──
     const gitParts = [];
@@ -562,10 +574,27 @@ process.stdin.on('end', () => {
     let LEFT_W = Math.max(LEFT_INNER, maxFull);
     // Total box = terminal width exactly. No wider, no narrower.
     let TERM_W = process.stdout.columns || process.stderr.columns || 0;
+    // PowerShell on Windows is the slow path (a fresh PowerShell subprocess
+    // per render is ~500 ms). Cache the result for 60 s in tmpdir; the
+    // terminal width rarely changes mid-session and a one-minute lag on
+    // resize is acceptable.
+    const TERM_CACHE_PATH = path.join(os.tmpdir(), `claude-termw-${process.pid}.txt`);
+    const TERM_CACHE_GLOBAL = path.join(os.tmpdir(), 'claude-termw-cache.txt');
+    const TERM_CACHE_TTL_MS = 60 * 1000;
+    if (!TERM_W) {
+      try {
+        const stat = fs.statSync(TERM_CACHE_GLOBAL);
+        if (Date.now() - stat.mtimeMs < TERM_CACHE_TTL_MS) {
+          TERM_W = parseInt(fs.readFileSync(TERM_CACHE_GLOBAL, 'utf8').trim(), 10) || 0;
+        }
+      } catch (e) {}
+    }
     if (!TERM_W && process.platform === 'win32') {
       try {
         const r = spawnSync('powershell.exe', ['-NoProfile', '-c', '$Host.UI.RawUI.WindowSize.Width'], { encoding: 'utf8', timeout: 2000 });
-        TERM_W = parseInt((r.stdout || '').trim(), 10) || 0;
+        if (r && !r.error) {
+          TERM_W = parseInt((r.stdout || '').trim(), 10) || 0;
+        }
       } catch(e) {}
     }
     if (!TERM_W) {
@@ -581,6 +610,8 @@ process.stdin.on('end', () => {
     // Fallback width — 120 is conservative; bump to 160 so wider terminals
     // (common 160/180/210 cols) get more room for the message history column.
     if (!TERM_W) TERM_W = 160;
+    // Persist the resolved width so the next render can skip the slow path.
+    try { fs.writeFileSync(TERM_CACHE_GLOBAL, String(TERM_W)); } catch (e) {}
     // Don't subtract padding — let the box fill full terminal width.
     // Claude Code's padding shifts our output right, but the box itself should be terminal-wide.
 
