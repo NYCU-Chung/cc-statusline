@@ -138,6 +138,8 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 **Per-feature state 隔離（cost-loss 修正）。** Active session 時間存在自己的 state 檔（`active-<sid>.json`），跟 cum 檔（`cum-<sid>.json`，記 cost / lines / tokens）完全分離。cum 檔**只由 `statusline.js` 獨家寫入** — 任何 hook 都不能碰。這個 invariant 很重要：早期版本有 hook 在 cum 不存在時寫入只含自己欄位的 partial cum，下一次 statusline render 走 fallback 路徑會把累積的 `cost.total` reset 成 0。按 writer 拆 state 徹底切斷這條 failure mode；cum read 的 fallback 也加固，現在缺欄位**永遠**不會 reset `total`。
 
+**Cum 檔三層穩定性保護。** 持久化位置之外，每次 cum 寫入都走穩定性 pipeline：(1) **單調保證** — 寫入前重讀 disk 上的舊值，in-memory `cost.total`（以及 `add` / `rm` / `tok`）絕不允許低於 disk 值（這些累積值在定義上單調遞增）；(2) **單檔 backup** — 寫入前舊內容會 atomic 複製到 `cum-<sid>.bak.json`，萬一檔案壞掉可以手動還原；(3) **變動 audit log** — 顯著的 cost 變化（≥ \$0.01）會 append 一行 JSON 到 `~/.claude/cc-statusline/audit.log`（含 timestamp、sid、before / after / delta），檔案到 ~1 MB 自動 rotate 到 `audit.log.1`。
+
 **跨 session quota 聚合。** Quota 是跨所有 Claude Code session 共享的，但每個 session 的 payload 只反映自己當下的快照。Statusline 在每次 render 把 snapshot 寫入 `~/.claude/rate-limit-snapshots.json`，並做跨 session 聚合 — 取出 `resets_at` 最晚（= 最近 API 觀察）的 snapshot 那組，取 MAX `used_percentage`。所有 session 都會收斂到同一個顯示值。
 
 **預設 all time 累積、滾動視窗可選。** `cost $TOTAL (all time) · $SESSION (this session)` 跟 `tokens TOTAL (SESSION this session)` 加總 `~/.claude/cc-statusline/` 下所有 `cum-*.json`，檔名必須符合 24-hex 格式（擋掉測試殘留 / 雜項污染）。想要滾動視窗就在 `~/.claude/cc-statusline-rows.json` 設 `aggWindowDays`（例：`7` / `30` / `90`）。之前預設 30 天是為了貼齊 tmpdir 的清理週期，state 搬出 tmpdir 後不再需要這個 workaround。
