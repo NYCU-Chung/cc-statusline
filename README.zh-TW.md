@@ -134,6 +134,8 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 **Hook-driven active session 時長。** `duration` row 是每個 turn 時長（`Stop` − `UserPromptSubmit` timestamp）累加的結果，由 `hooks/active-time-tracker.js` 維護。第一次跑該 hook 會從 transcript JSONL 用 user→assistant timestamp 配對 bootstrap 出歷史 active 時間。因為每段切片都被「turn 開著」邊界化，turn 外的 idle 自然不算 — 沒有 threshold、沒有 heuristic。
 
+**Per-feature state 隔離（cost-loss 修正）。** Active session 時間存在自己的 state 檔（`claude-active-<sid>.json`），跟 cum 檔（`claude-cum-<sid>.json`，記 cost / dur / lines / tokens）完全分離。cum 檔**只由 `statusline.js` 獨家寫入** — 任何 hook 都不能碰。這個 invariant 很重要：早期版本有 hook 在 cum 不存在時寫入只含自己欄位的 partial cum，下一次 statusline render 走 fallback 路徑會把累積的 `cost.total` reset 成 0。按 writer 拆 state 徹底切斷這條 failure mode；cum read 的 fallback 也加固，現在缺欄位**永遠**不會 reset `total`。
+
 **跨 session quota 聚合。** Quota 是跨所有 Claude Code session 共享的，但每個 session 的 payload 只反映自己當下的快照。Statusline 在每次 render 把 snapshot 寫入 `~/.claude/rate-limit-snapshots.json`，並做跨 session 聚合 — 取出 `resets_at` 最晚（= 最近 API 觀察）的 snapshot 那組，取 MAX `used_percentage`。所有 session 都會收斂到同一個顯示值。
 
 **滾動視窗累積 cost + tokens。** `cost $TOTAL (past Nd) · $SESSION (this session)` 和 `tokens TOTAL (SESSION this session)` 只加總**視窗內** mtime 活躍過的 `claude-cum-*.json`，且檔名必須符合 24-hex 格式（擋掉測試殘留 / 雜項污染）。視窗由 `aggWindowDays` 控制（`~/.claude/cc-statusline-rows.json`，預設 30 天，設 `0` = 不限時間）。預設 30 天貼齊 Windows Storage Sense 的 tmpdir 清理週期，所以當 OS 自動清老檔時顯示數字不會憑空下降。

@@ -1,10 +1,14 @@
 // UserPromptSubmit + Stop hook: maintain "active session time" — the
-// total time Claude was actually working on your turns. Per-turn slice:
-// from the moment the user submits a prompt until the Stop event fires.
-// Inter-turn idle (you reading, thinking, walking away) is automatically
-// excluded because it falls outside any turn.
+// total wall-clock time Claude was actually working on your turns. Slice
+// per turn: from UserPromptSubmit until the matching Stop. Inter-turn
+// idle is excluded automatically because it falls outside any open turn.
+// No idle threshold required.
 //
-// No idle threshold, no transcript scan — just two timestamps in cum.json.
+// State lives in its OWN file `claude-active-<sid>.json`, NOT the shared
+// `claude-cum-<sid>.json`. This isolation is intentional: when this hook
+// fires before statusline has rendered a brand-new sid, it must not
+// accidentally write a partial cum file (which would erase cost / dur /
+// tokens accumulated by future statusline writes).
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -33,17 +37,18 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
-    const cumPath = path.join(os.tmpdir(), `claude-cum-${sid}.json`);
+    const activePath = path.join(os.tmpdir(), `claude-active-${sid}.json`);
 
-    let cum = {};
-    try { cum = JSON.parse(fs.readFileSync(cumPath, 'utf8')); } catch (e) {}
+    let active = {};
+    try { active = JSON.parse(fs.readFileSync(activePath, 'utf8')); } catch (e) {}
 
-    // Bootstrap once from transcript: sum (assistant.ts - user.ts) for each
-    // user→assistant pair. Same turn-bounded model as the live path, so no
-    // threshold needed. Subsequent runs find activeMs already populated and
-    // skip this scan.
-    if (cum.activeMs === undefined) {
-      cum.activeMs = 0;
+    const NOW_MS = Date.now();
+
+    // Bootstrap once: scan transcript JSONL and sum (assistant.ts - user.ts)
+    // for each turn pair. Same turn-bounded model as the live path so no
+    // threshold is needed.
+    if (active.activeMs === undefined) {
+      active.activeMs = 0;
       if (i.transcript_path) {
         try {
           const raw = fs.readFileSync(i.transcript_path, 'utf8');
@@ -57,7 +62,7 @@ process.stdin.on('end', () => {
               if (entry.type === 'user') {
                 lastUserTs = t;
               } else if (entry.type === 'assistant' && lastUserTs) {
-                if (t > lastUserTs) cum.activeMs += t - lastUserTs;
+                if (t > lastUserTs) active.activeMs += t - lastUserTs;
                 lastUserTs = null;
               }
             } catch (e) {}
@@ -66,21 +71,19 @@ process.stdin.on('end', () => {
       }
     }
 
-    const NOW_MS = Date.now();
-
     if (event === 'UserPromptSubmit') {
       // Turn opens — stamp when the prompt was submitted.
-      cum.turnStartAt = NOW_MS;
+      active.turnStartAt = NOW_MS;
     } else {
       // Stop — turn closes; add the elapsed slice if a turn was open.
-      if (cum.turnStartAt) {
-        const dur = NOW_MS - cum.turnStartAt;
-        if (dur > 0) cum.activeMs += dur;
-        cum.turnStartAt = null;
+      if (active.turnStartAt) {
+        const dur = NOW_MS - active.turnStartAt;
+        if (dur > 0) active.activeMs += dur;
+        active.turnStartAt = null;
       }
     }
 
-    atomicWrite(cumPath, JSON.stringify(cum));
+    atomicWrite(activePath, JSON.stringify(active));
   } catch (e) {}
   process.stdout.write(d);
 });
