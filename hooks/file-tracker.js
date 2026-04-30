@@ -23,7 +23,8 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
-    const file = path.join(os.tmpdir(), `claude-files-${sid}.json`);
+    try { fs.mkdirSync(path.join(os.homedir(), '.claude', 'cc-statusline'), { recursive: true }); } catch (e) {}
+    const file = path.join(os.homedir(), '.claude', 'cc-statusline', `files-${sid}.json`);
     let files = [];
     try { files = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {}
     const name = path.basename(fp);

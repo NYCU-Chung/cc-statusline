@@ -27,8 +27,9 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
-    const countFile = path.join(os.tmpdir(), `claude-msgcount-${sid}`);
-    const summaryFile = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
+    try { fs.mkdirSync(path.join(os.homedir(), '.claude', 'cc-statusline'), { recursive: true }); } catch (e) {}
+    const countFile = path.join(os.homedir(), '.claude', 'cc-statusline', `msgcount-${sid}`);
+    const summaryFile = path.join(os.homedir(), '.claude', 'cc-statusline', `summary-${sid}.txt`);
 
     // Sync current summary → transcript custom-title (takes effect in /resume picker).
     // Skip if no transcript path or no summary yet. Only rewrite when it would change,
