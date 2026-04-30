@@ -37,7 +37,8 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
-    const activePath = path.join(os.tmpdir(), `claude-active-${sid}.json`);
+    try { fs.mkdirSync(path.join(os.homedir(), '.claude', 'cc-statusline'), { recursive: true }); } catch (e) {}
+    const activePath = path.join(os.homedir(), '.claude', 'cc-statusline', `active-${sid}.json`);
 
     let active = {};
     try { active = JSON.parse(fs.readFileSync(activePath, 'utf8')); } catch (e) {}

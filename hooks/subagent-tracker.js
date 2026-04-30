@@ -36,7 +36,8 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
-    const file = path.join(os.tmpdir(), `claude-agents-${sid}.json`);
+    try { fs.mkdirSync(path.join(os.homedir(), '.claude', 'cc-statusline'), { recursive: true }); } catch (e) {}
+    const file = path.join(os.homedir(), '.claude', 'cc-statusline', `agents-${sid}.json`);
 
     let name = i.agent_type;
     if (!name && typeof i.agent_id === 'string') {

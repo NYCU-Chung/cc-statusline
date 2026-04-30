@@ -146,6 +146,33 @@ process.stdin.on('end', () => {
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
 
+    // Per-session state lives under ~/.claude/cc-statusline/ rather than
+    // os.tmpdir(). tmpdir is treated as throwaway by every modern OS
+    // (Windows Storage Sense clears it on a 30-day cycle, cleanmgr /
+    // antivirus on whim, /tmp resets on Linux reboot, macOS occasionally
+    // sweeps), which is the root cause of every cost-loss and active-
+    // time-reset story we've chased so far. Only true ephemeral caches
+    // (e.g. resolved terminal width) belong in tmpdir.
+    const stateDir = path.join(os.homedir(), '.claude', 'cc-statusline');
+    try { fs.mkdirSync(stateDir, { recursive: true }); } catch (e) {}
+    // One-shot migration from the old tmpdir layout. Marker file stops us
+    // doing this on every render. Skips silently on any error so we never
+    // block the statusline render path.
+    const migrateMarker = path.join(stateDir, '.migrated-from-tmpdir');
+    if (!fs.existsSync(migrateMarker)) {
+      try {
+        const tmp = os.tmpdir();
+        const re = /^claude-(cum|active|msgs|msgcount|summary|agents|files|compacts)-([0-9a-z]+)(\.json|\.txt)?$/;
+        for (const f of fs.readdirSync(tmp)) {
+          const m = f.match(re);
+          if (!m) continue;
+          const dest = path.join(stateDir, f.replace(/^claude-/, ''));
+          try { fs.renameSync(path.join(tmp, f), dest); } catch (e) {}
+        }
+        fs.writeFileSync(migrateMarker, String(Date.now()));
+      } catch (e) {}
+    }
+
     // Claude Code sometimes resets total_cost / duration / lines (context compact,
     // auto-recovery, etc). Instead of freezing at max (which could over-report),
     // track DELTAS: when payload >= last_baseline, add delta to total; when payload
@@ -156,7 +183,7 @@ process.stdin.on('end', () => {
     const curAdd = i.cost?.total_lines_added ?? 0;
     const curRm = i.cost?.total_lines_removed ?? 0;
     const curTok = (i.context_window?.total_input_tokens ?? 0) + (i.context_window?.total_output_tokens ?? 0);
-    const cumPath = path.join(os.tmpdir(), `claude-cum-${sid}.json`);
+    const cumPath = path.join(stateDir, `cum-${sid}.json`);
     // Each step field: { total: cumulative, base: last-observed payload value }.
     // INVARIANT: only statusline.js writes this file. Hooks must NEVER write
     // to claude-cum-*.json — they keep their own per-feature state files
@@ -202,7 +229,7 @@ process.stdin.on('end', () => {
     // never accidentally drop cost.total via a partial overwrite.
     let activeMs = 0;
     try {
-      const aPath = path.join(os.tmpdir(), `claude-active-${sid}.json`);
+      const aPath = path.join(stateDir, `active-${sid}.json`);
       const a = JSON.parse(fs.readFileSync(aPath, 'utf8'));
       if (typeof a.activeMs === 'number') activeMs = a.activeMs;
     } catch (e) {}
@@ -330,7 +357,7 @@ process.stdin.on('end', () => {
 
     let agentLine = '';
     try {
-      const agents = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-agents-${sid}.json`), 'utf8'));
+      const agents = JSON.parse(fs.readFileSync(path.join(stateDir, `agents-${sid}.json`), 'utf8'));
       // Group by agent name — supports concurrent invocations (e.g. 3 critics in parallel)
       const byName = {};
       for (const [key, info] of Object.entries(agents)) {
@@ -355,14 +382,14 @@ process.stdin.on('end', () => {
     } catch (e) {}
 
     let compactCount = 0;
-    try { compactCount = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-compacts-${sid}.json`), 'utf8')).count; } catch (e) {}
+    try { compactCount = JSON.parse(fs.readFileSync(path.join(stateDir, `compacts-${sid}.json`), 'utf8')).count; } catch (e) {}
 
     let fileParts = [];
-    try { fileParts = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-files-${sid}.json`), 'utf8')); } catch (e) {}
+    try { fileParts = JSON.parse(fs.readFileSync(path.join(stateDir, `files-${sid}.json`), 'utf8')); } catch (e) {}
 
     let msgHistory = [];
     try {
-      msgHistory = JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `claude-msgs-${sid}.json`), 'utf8'));
+      msgHistory = JSON.parse(fs.readFileSync(path.join(stateDir, `msgs-${sid}.json`), 'utf8'));
     } catch (e) {}
 
     // Memory: check which CLAUDE.md / rules are loaded
@@ -446,13 +473,13 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const AGG_MAX_AGE_MS = _aggDays > 0 ? _aggDays * 86400 * 1000 : Infinity;
-    const CUM_FILE_RE = /^claude-cum-[0-9a-f]{24}\.json$/;
+    const CUM_FILE_RE = /^cum-[0-9a-f]{24}\.json$/;
     const _aggNow = Date.now();
     let allCost = 0, allTok = 0;
     try {
-      for (const f of fs.readdirSync(os.tmpdir())) {
+      for (const f of fs.readdirSync(stateDir)) {
         if (!CUM_FILE_RE.test(f)) continue;
-        const full = path.join(os.tmpdir(), f);
+        const full = path.join(stateDir, f);
         try {
           if (_aggNow - fs.statSync(full).mtimeMs > AGG_MAX_AGE_MS) continue;
           const c = JSON.parse(fs.readFileSync(full, 'utf8'));
@@ -550,7 +577,7 @@ process.stdin.on('end', () => {
     let summary = '';
     if (showRow('summary')) {
       try {
-        const sf = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
+        const sf = path.join(stateDir, `summary-${sid}.txt`);
         summary = fs.readFileSync(sf, 'utf8').trim().split('\n')[0].slice(0, 500);
       } catch (e) {}
       if (!summary) summary = sessionName || '';

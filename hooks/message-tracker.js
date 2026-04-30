@@ -37,7 +37,8 @@ process.stdin.on('end', () => {
       }
     } catch (e) {}
     const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
-    const file = path.join(os.tmpdir(), `claude-msgs-${sid}.json`);
+    try { fs.mkdirSync(path.join(os.homedir(), '.claude', 'cc-statusline'), { recursive: true }); } catch (e) {}
+    const file = path.join(os.homedir(), '.claude', 'cc-statusline', `msgs-${sid}.json`);
 
     // Dedup: Stop can fire multiple times per assistant turn, and duplicate user prompts
     // can happen if the same text is submitted twice. CAS wraps read-check-write
