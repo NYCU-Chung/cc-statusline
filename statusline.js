@@ -157,21 +157,36 @@ process.stdin.on('end', () => {
     const curRm = i.cost?.total_lines_removed ?? 0;
     const curTok = (i.context_window?.total_input_tokens ?? 0) + (i.context_window?.total_output_tokens ?? 0);
     const cumPath = path.join(os.tmpdir(), `claude-cum-${sid}.json`);
-    // Each step field: { total: cumulative, base: last-observed payload value }
+    // Each step field: { total: cumulative, base: last-observed payload value }.
+    // INVARIANT: only statusline.js writes this file. Hooks must NEVER write
+    // to claude-cum-*.json — they keep their own per-feature state files
+    // (e.g. claude-active-<sid>.json for active-time-tracker). This is
+    // critical: when stored.cost is missing because some hook wrote a
+    // partial cum file, the fallback below would otherwise reset cost.total
+    // to 0 and statusline would silently lose accumulated spend.
     const STEP_KEYS = ['cost', 'dur', 'add', 'rm', 'tok'];
+    const fieldCur = { cost: curCost, dur: curDur, add: curAdd, rm: curRm, tok: curTok };
     let cum = {};
-    for (const k of STEP_KEYS) cum[k] = { total: 0, base: 0 };
+    // Default: total = 0, base = current payload value. Setting base = cur
+    // (instead of 0) means a fresh / partial cum file does NOT make the
+    // first step() add the entire curCost into total — which would double-
+    // count any prior accumulated value that legitimately lives elsewhere.
+    for (const k of STEP_KEYS) cum[k] = { total: 0, base: fieldCur[k] };
     try {
       const stored = JSON.parse(fs.readFileSync(cumPath, 'utf8'));
-      // Preserve every stored field — including ones managed by external
-      // hooks (activeMs, lastStopAt, …) that statusline doesn't compute
-      // but still has to round-trip through atomicWrite without erasing.
       Object.assign(cum, stored);
-      // Then re-canonicalise step fields with migration from old flat format.
       for (const k of STEP_KEYS) {
-        if (stored[k] && typeof stored[k] === 'object') cum[k] = stored[k];
-        else if (typeof stored[k] === 'number') cum[k] = { total: stored[k], base: stored[k] };
-        else cum[k] = { total: 0, base: 0 };
+        if (stored[k] && typeof stored[k] === 'object') {
+          cum[k] = {
+            total: typeof stored[k].total === 'number' ? stored[k].total : 0,
+            base: typeof stored[k].base === 'number' ? stored[k].base : fieldCur[k],
+          };
+        } else if (typeof stored[k] === 'number') {
+          // Migration from old flat-number format.
+          cum[k] = { total: stored[k], base: stored[k] };
+        }
+        // else: leave the defensive default { total: 0, base: cur } above —
+        // do NOT reset total to 0 with base 0, that's the corruption path.
       }
     } catch (e) {}
     const step = (key, cur) => {
@@ -182,11 +197,16 @@ process.stdin.on('end', () => {
     step('cost', curCost); step('dur', curDur); step('add', curAdd); step('rm', curRm); step('tok', curTok);
     atomicWrite(cumPath, JSON.stringify(cum));
     const cost = '$' + cum.cost.total.toFixed(2);
-    // Active session time is maintained by hooks/active-time-tracker.js
-    // (Stop event), so we just read whichever value is live in cum.
-    // Falls back to cum.dur (API call latency total) if the hook isn't
-    // installed or hasn't fired yet.
-    const dur = fmtDur(Math.round((cum.activeMs > 0 ? cum.activeMs : cum.dur.total) / 60000));
+    // Active session time lives in its own state file written by
+    // hooks/active-time-tracker.js. Decoupled from cum so that hook can
+    // never accidentally drop cost.total via a partial overwrite.
+    let activeMs = 0;
+    try {
+      const aPath = path.join(os.tmpdir(), `claude-active-${sid}.json`);
+      const a = JSON.parse(fs.readFileSync(aPath, 'utf8'));
+      if (typeof a.activeMs === 'number') activeMs = a.activeMs;
+    } catch (e) {}
+    const dur = fmtDur(Math.round((activeMs > 0 ? activeMs : cum.dur.total) / 60000));
     const ctx = Math.round(i.context_window?.used_percentage ?? 0);
     // If a rate-limit window's reset has already passed in real time, payload's
     // used_percentage is stale (payload only refreshes on message submit). Assume
