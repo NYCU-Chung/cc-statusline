@@ -13,7 +13,7 @@ Claude Code 的完整 statusline 儀表板。所有資訊一目瞭然 — 不再
 | **session summary** | 整個 session 的自動摘要（Claude 每 ~10 則訊息重寫一次，內建壓縮規則控制在 ~120 字內）|
 | **directory** | 當前工作目錄 + `+新增 -刪除 lines` |
 | **repo + branch** | `owner/repo`（從 `git remote` 解析）+ branch + `(N changed)` |
-| **cost** | `cost $全部 (<視窗>) · $本 session (this session)` — 可配置的滾動視窗內所有活躍 session 累積開銷（`aggWindowDays` 設定於 `~/.claude/cc-statusline-rows.json`，預設 30 天、`0` = 不限時間），用括號註解對稱呈現兩個數字 |
+| **cost** | `cost $全部 (<視窗>) · $本 session (this session)` — 跨 session 累積開銷，括號註解對稱呈現兩個數字。預設 all time；想要滾動視窗就在 `~/.claude/cc-statusline-rows.json` 設 `aggWindowDays`（例：`7` / `30` / `90`）。 |
 | **model** | 當前模型名稱 + effort 等級（5 色階：`low` 灰 / `medium` 綠 / `high` 黃 / `xhigh` 橘 / `max` 紅）|
 | **duration** | Active session 時長 — 累加每個 turn 的時長（UserPromptSubmit → Stop），turn 之間的 idle 自然不計入、不需要任何閾值。視覺上跟 model row 排在一起、但 toggle 獨立（`/cc-statusline:rows hide duration`）|
 | **tokens / context / compact** | `tokens 全部 (本 session this session)`（跟 cost 一樣雙顯）· context window 用量 · 壓縮次數（`compact 1 time` / `compact N times`）|
@@ -140,7 +140,7 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 **跨 session quota 聚合。** Quota 是跨所有 Claude Code session 共享的，但每個 session 的 payload 只反映自己當下的快照。Statusline 在每次 render 把 snapshot 寫入 `~/.claude/rate-limit-snapshots.json`，並做跨 session 聚合 — 取出 `resets_at` 最晚（= 最近 API 觀察）的 snapshot 那組，取 MAX `used_percentage`。所有 session 都會收斂到同一個顯示值。
 
-**滾動視窗累積 cost + tokens。** `cost $TOTAL (past Nd) · $SESSION (this session)` 和 `tokens TOTAL (SESSION this session)` 只加總**視窗內** mtime 活躍過的 `claude-cum-*.json`，且檔名必須符合 24-hex 格式（擋掉測試殘留 / 雜項污染）。視窗由 `aggWindowDays` 控制（`~/.claude/cc-statusline-rows.json`，預設 30 天，設 `0` = 不限時間）。預設 30 天貼齊 Windows Storage Sense 的 tmpdir 清理週期，所以當 OS 自動清老檔時顯示數字不會憑空下降。
+**預設 all time 累積、滾動視窗可選。** `cost $TOTAL (all time) · $SESSION (this session)` 跟 `tokens TOTAL (SESSION this session)` 加總 `~/.claude/cc-statusline/` 下所有 `cum-*.json`，檔名必須符合 24-hex 格式（擋掉測試殘留 / 雜項污染）。想要滾動視窗就在 `~/.claude/cc-statusline-rows.json` 設 `aggWindowDays`（例：`7` / `30` / `90`）。之前預設 30 天是為了貼齊 tmpdir 的清理週期，state 搬出 tmpdir 後不再需要這個 workaround。
 
 **時間型 rate-limit 自動 rollover。** Claude Code 的 `rate_limits.*.resets_at` 凍結在最後一次 API 回應的那刻 — 如果你閒置過了 reset 邊界，payload 還是會說「已用 87%」，但實際上窗口早就 reset 了。Statusline 會比對 `resets_at` 跟實際時間，過期就自動歸零 bar 並接續倒數到下個 5h/7d 邊界。
 

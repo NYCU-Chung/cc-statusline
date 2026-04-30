@@ -465,7 +465,12 @@ process.stdin.on('end', () => {
     //      means the displayed total doesn't silently drop when the OS
     //      evicts older files. Aligns with typical monthly billing view.
     // Re-read config for aggWindowDays (rowCfg above holds only row flags).
-    let _aggDays = 30;
+    // Default 0 = all time. Per-session state lives under
+    // ~/.claude/cc-statusline/ which the OS does not auto-clean, so the
+    // earlier 30-day default (chosen to match Windows Storage Sense's
+    // tmpdir eviction window) is no longer needed. Users who want a
+    // rolling view can still set aggWindowDays explicitly.
+    let _aggDays = 0;
     try {
       const stored = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
       if (typeof stored.aggWindowDays === 'number' && stored.aggWindowDays >= 0) {

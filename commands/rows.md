@@ -17,7 +17,7 @@ Besides row toggles the file also holds non-row behaviour knobs:
 |-----|------|---------|-------------|
 | `enabled` | boolean | `true` | Master switch — `false` = no output at all |
 | `summaryInterval` | number | `10` | How many UserPromptSubmit events between session-summary nudges (minimum `1`) |
-| `aggWindowDays` | number | `30` | Rolling window (in days) for the all-session cost + tokens aggregate. Only sessions whose cum file was modified within this window contribute. `0` = all time (no window). |
+| `aggWindowDays` | number | `0` | Rolling window (in days) for the all-session cost + tokens aggregate. Default `0` = all time. Set to `7` / `30` / `90` etc. for a rolling view. |
 
 ## Valid row keys
 
@@ -47,7 +47,7 @@ $ARGUMENTS
    - No args → just list current state (step 4, no write).
    - `off` (no rows listed) → set `enabled: false` (master switch off). Keep row flags intact.
    - `on` (no rows listed) → set `enabled: true`. Keep row flags intact.
-   - `reset` → set `enabled: true`, every row key to `true`, and remove `summaryInterval` and `aggWindowDays` (falls back to defaults `10` and `30`).
+   - `reset` → set `enabled: true`, every row key to `true`, and remove `summaryInterval` and `aggWindowDays` (falls back to defaults `10` and `0`).
    - `summary-interval <N>` → set `summaryInterval: N`. Reject `N < 1`.
    - `agg-window <N>` → set `aggWindowDays: N`. Accept `0` (all time). Reject negative.
    - `only <rows...>` → every listed row becomes `true`, every other row becomes `false`. Leave special options untouched.
