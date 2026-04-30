@@ -39,6 +39,10 @@ const spawnOpts = { encoding: 'utf8', timeout: 15000, cwd: targetCwd, windowsHid
 if (bin) {
   r = spawnSync(bin, ['mcp', 'list'], spawnOpts);
 } else {
+  // SECURITY: shell:true is safe HERE because argv is a fixed string
+  // literal pair. Never add user-controlled values to this argv array
+  // — they would be string-joined into the shell command and become
+  // a command-injection vector. argv[2] is consumed only as spawnOpts.cwd.
   const cmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
   r = spawnSync(cmd, ['mcp', 'list'], { ...spawnOpts, shell: true });
 }
