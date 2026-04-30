@@ -222,7 +222,63 @@ process.stdin.on('end', () => {
       else { c.base = cur; } // reset detected — new baseline, don't touch total
     };
     step('cost', curCost); step('dur', curDur); step('add', curAdd); step('rm', curRm); step('tok', curTok);
+
+    // ── Stability layer ────────────────────────────────────────────
+    // The state files outside tmpdir mean the OS can no longer eat them,
+    // but we still defend against future bugs (or manual edits) that
+    // might somehow drop cost.total. Three layers:
+    //
+    //   1. Monotonic invariant — re-read the on-disk cum right before
+    //      write and never let our in-memory total go below it. cost,
+    //      add, rm, tok are all monotonic by definition.
+    //   2. Snapshot backup — keep one .bak.json copy of the previous
+    //      cum file content, so a wrong write can be hand-recovered.
+    //   3. Audit log — append one JSON line per significant cost change
+    //      to ~/.claude/cc-statusline/audit.log; rotate at ~1 MB.
+    let priorOnDisk = null;
+    try { priorOnDisk = JSON.parse(fs.readFileSync(cumPath, 'utf8')); } catch (e) {}
+    if (priorOnDisk) {
+      for (const k of STEP_KEYS) {
+        const stTotal = priorOnDisk[k]?.total;
+        if (typeof stTotal === 'number' && stTotal > cum[k].total) {
+          // Disk has higher accumulation than memory — likely a concurrent
+          // writer or a partial in-memory state. Preserve the higher value.
+          cum[k].total = stTotal;
+        }
+      }
+    }
+    // Snapshot the prior content before overwriting.
+    try {
+      if (priorOnDisk) {
+        atomicWrite(cumPath.replace(/\.json$/, '.bak.json'), JSON.stringify(priorOnDisk));
+      }
+    } catch (e) {}
     atomicWrite(cumPath, JSON.stringify(cum));
+    // Audit log for cost movements. Only log meaningful deltas (>=$0.01)
+    // to keep the file tractable. Rotate at ~1 MB.
+    try {
+      const oldCost = priorOnDisk?.cost?.total || 0;
+      const newCost = cum.cost.total;
+      if (Math.abs(newCost - oldCost) >= 0.01) {
+        const auditPath = path.join(stateDir, 'audit.log');
+        const line = JSON.stringify({
+          ts: new Date().toISOString(),
+          sid: sid,
+          kind: 'cost',
+          before: oldCost,
+          after: newCost,
+          delta: +(newCost - oldCost).toFixed(4),
+        }) + '\n';
+        fs.appendFileSync(auditPath, line);
+        // Single-step rotate at ~1 MB.
+        try {
+          const st = fs.statSync(auditPath);
+          if (st.size > 1024 * 1024) {
+            try { fs.renameSync(auditPath, auditPath + '.1'); } catch (e) {}
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
     const cost = '$' + cum.cost.total.toFixed(2);
     // Active session time lives in its own state file written by
     // hooks/active-time-tracker.js. Decoupled from cum so that hook can
