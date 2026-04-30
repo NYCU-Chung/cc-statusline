@@ -26,7 +26,7 @@ process.stdin.on('end', () => {
         if (m) _logicalSid = m[1];
       }
     } catch (e) {}
-    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
     const countFile = path.join(os.tmpdir(), `claude-msgcount-${sid}`);
     const summaryFile = path.join(os.tmpdir(), `claude-summary-${sid}.txt`);
 
@@ -37,21 +37,30 @@ process.stdin.on('end', () => {
       if (i.transcript_path && fs.existsSync(i.transcript_path) && fs.existsSync(summaryFile)) {
         const sumRaw = fs.readFileSync(summaryFile, 'utf8').trim().split('\n')[0];
         const title = sumRaw.length > 40 ? sumRaw.slice(0, 39) + '\u2026' : sumRaw;
-        if (title && i.session_id) {
-          // Find most recent existing custom-title in the transcript to avoid duplicates
-          const raw = fs.readFileSync(i.transcript_path, 'utf8');
+        if (title && _logicalSid) {
+          // Read only the tail (256 KB) of the transcript instead of the
+          // whole file \u2014 a long session can have a 100 MB+ transcript and
+          // re-reading it on every UserPromptSubmit was the dominant per-
+          // turn cost. Custom-title entries always land in the tail.
+          const stat = fs.statSync(i.transcript_path);
+          const tailSize = Math.min(stat.size, 256 * 1024);
+          const buf = Buffer.alloc(tailSize);
+          const fd = fs.openSync(i.transcript_path, 'r');
+          fs.readSync(fd, buf, 0, tailSize, stat.size - tailSize);
+          fs.closeSync(fd);
+          const raw = buf.toString('utf8');
           let lastTitle = null;
-          for (let j = raw.length; j > 0; j = raw.lastIndexOf('\n', j - 1)) {
-            const start = raw.lastIndexOf('\n', j - 1) + 1;
-            const line = raw.slice(start, j);
-            if (line.includes('"type":"custom-title"')) {
-              try { lastTitle = JSON.parse(line).customTitle; } catch (e) {}
-              break;
-            }
-            if (start === 0) break;
+          const idx = raw.lastIndexOf('"type":"custom-title"');
+          if (idx >= 0) {
+            const lineStart = raw.lastIndexOf('\n', idx) + 1;
+            const lineEnd = raw.indexOf('\n', idx);
+            const line = lineEnd > 0 ? raw.slice(lineStart, lineEnd) : raw.slice(lineStart);
+            try { lastTitle = JSON.parse(line).customTitle; } catch (e) {}
           }
           if (lastTitle !== title) {
-            const entry = JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: i.session_id });
+            // Use the logical sid (transcript-derived) so the /resume picker
+            // matches the same key statusline and other hooks use.
+            const entry = JSON.stringify({ type: 'custom-title', customTitle: title, sessionId: _logicalSid });
             fs.appendFileSync(i.transcript_path, entry + '\n');
           }
         }

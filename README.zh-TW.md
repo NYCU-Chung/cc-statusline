@@ -103,7 +103,7 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
       { "type": "command", "command": "node ~/.claude/hooks/summary-updater.js" },
       { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],
-    "Stop": [{ "matcher": "*", "hooks": [
+    "Stop": [{ "matcher": ".*", "hooks": [
       { "type": "command", "command": "node ~/.claude/hooks/message-tracker.js" },
       { "type": "command", "command": "node ~/.claude/hooks/active-time-tracker.js" }
     ]}],

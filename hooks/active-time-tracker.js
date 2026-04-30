@@ -36,7 +36,7 @@ process.stdin.on('end', () => {
         if (m) _logicalSid = m[1];
       }
     } catch (e) {}
-    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+    const sid = (_logicalSid || 'default').replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 24);
     const activePath = path.join(os.tmpdir(), `claude-active-${sid}.json`);
 
     let active = {};
@@ -76,9 +76,12 @@ process.stdin.on('end', () => {
       active.turnStartAt = NOW_MS;
     } else {
       // Stop — turn closes; add the elapsed slice if a turn was open.
+      // Sanity cap: drop slices >24 h. If Claude Code crashed without firing
+      // Stop, the next Stop after a resume could otherwise close a turn
+      // started days ago and inflate active by the entire wall-clock gap.
       if (active.turnStartAt) {
         const dur = NOW_MS - active.turnStartAt;
-        if (dur > 0) active.activeMs += dur;
+        if (dur > 0 && dur < 24 * 60 * 60 * 1000) active.activeMs += dur;
         active.turnStartAt = null;
       }
     }
