@@ -18,7 +18,8 @@ Besides row toggles the file also holds non-row behaviour knobs:
 | `enabled` | boolean | `true` | Master switch — `false` = no output at all |
 | `summaryInterval` | number | `10` | How many UserPromptSubmit events between session-summary nudges (minimum `1`) |
 | `aggWindowDays` | number | `0` | Rolling window (in days) for the all-session cost + tokens aggregate. Default `0` = all time. Set to `7` / `30` / `90` etc. for a rolling view. |
-| `statuslineWidthOffset` | number | `4` | Columns reserved on the right so the box doesn't overflow Claude Code's statusline area (which doesn't expose its own usable width — see [#5430](https://github.com/anthropics/claude-code/issues/5430)). Increase if the box still gets truncated; decrease to `0` if your terminal renders edge-to-edge. |
+| `statuslineWidth` | number | _(auto)_ | Hard-set the box width in columns. Width auto-detection is unreliable inside the statusline hook (see [#5430](https://github.com/anthropics/claude-code/issues/5430)) — Claude Code doesn't pass the available width and most fallbacks return wrong values. Measure your terminal once (`tput cols` from a normal shell) and set it here. Default fallback is `120`. |
+| `statuslineWidthOffset` | number | `4` | Columns reserved on the right after `statuslineWidth` is resolved, to leave room for Claude Code's own padding/indicator. Increase if the box still gets truncated; decrease to `0` if your terminal renders edge-to-edge. |
 
 ## Valid row keys
 
