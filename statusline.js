@@ -700,8 +700,24 @@ process.stdin.on('end', () => {
     if (!TERM_W) TERM_W = 160;
     // Persist the resolved width so the next render can skip the slow path.
     try { fs.writeFileSync(TERM_CACHE_GLOBAL, String(TERM_W)); } catch (e) {}
-    // Don't subtract padding — let the box fill full terminal width.
-    // Claude Code's padding shifts our output right, but the box itself should be terminal-wide.
+
+    // Reserve some columns so the box never overflows Claude Code's
+    // statusline area. Claude Code does not expose its own usable
+    // width to the statusline command; the request is filed and closed
+    // as not planned (anthropics/claude-code#5430), and `tput cols` /
+    // `$COLUMNS` are both unreliable inside the hook process. So the
+    // best we can do is detect the terminal width and conservatively
+    // shave a few columns. `statuslineWidthOffset` in
+    // ~/.claude/cc-statusline-rows.json lets the user fine-tune this
+    // (positive = shave more; default = 4, which fits most terminals).
+    let widthOffset = 4;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
+      if (typeof cfg.statuslineWidthOffset === 'number' && cfg.statuslineWidthOffset >= 0) {
+        widthOffset = Math.floor(cfg.statuslineWidthOffset);
+      }
+    } catch (e) {}
+    TERM_W = Math.max(20, TERM_W - widthOffset);
 
     // Left = content-driven (never truncated). Right = fills remaining terminal space.
     const MSG_W = Math.max(0, TERM_W - LEFT_W - 3);
