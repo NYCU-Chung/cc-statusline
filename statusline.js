@@ -660,63 +660,46 @@ process.stdin.on('end', () => {
     let maxFull = 0;
     for (const f of fullLeftRows) maxFull = Math.max(maxFull, dw(f) + 2);
     let LEFT_W = Math.max(LEFT_INNER, maxFull);
-    // Total box = terminal width exactly. No wider, no narrower.
-    let TERM_W = process.stdout.columns || process.stderr.columns || 0;
-    // PowerShell on Windows is the slow path (a fresh PowerShell subprocess
-    // per render is ~500 ms). Cache the result for 60 s in tmpdir; the
-    // terminal width rarely changes mid-session and a one-minute lag on
-    // resize is acceptable.
-    const TERM_CACHE_PATH = path.join(os.tmpdir(), `claude-termw-${process.pid}.txt`);
-    const TERM_CACHE_GLOBAL = path.join(os.tmpdir(), 'claude-termw-cache.txt');
-    const TERM_CACHE_TTL_MS = 60 * 1000;
-    if (!TERM_W) {
-      try {
-        const stat = fs.statSync(TERM_CACHE_GLOBAL);
-        if (Date.now() - stat.mtimeMs < TERM_CACHE_TTL_MS) {
-          TERM_W = parseInt(fs.readFileSync(TERM_CACHE_GLOBAL, 'utf8').trim(), 10) || 0;
-        }
-      } catch (e) {}
-    }
-    if (!TERM_W && process.platform === 'win32') {
-      try {
-        const r = spawnSync('powershell.exe', ['-NoProfile', '-c', '$Host.UI.RawUI.WindowSize.Width'], { encoding: 'utf8', timeout: 2000 });
-        if (r && !r.error) {
-          TERM_W = parseInt((r.stdout || '').trim(), 10) || 0;
-        }
-      } catch(e) {}
-    }
-    if (!TERM_W) {
-      try {
-        const tty = require('tty');
-        const fd = fs.openSync('/dev/tty', 'r');
-        const stream = new tty.ReadStream(fd);
-        TERM_W = stream.columns || 0;
-        stream.destroy();
-      } catch(e) {}
-    }
-    if (!TERM_W) { try { TERM_W = parseInt(process.env.COLUMNS, 10) || 0; } catch(e) {} }
-    // Fallback width — 120 is conservative; bump to 160 so wider terminals
-    // (common 160/180/210 cols) get more room for the message history column.
-    if (!TERM_W) TERM_W = 160;
-    // Persist the resolved width so the next render can skip the slow path.
-    try { fs.writeFileSync(TERM_CACHE_GLOBAL, String(TERM_W)); } catch (e) {}
-
-    // Reserve some columns so the box never overflows Claude Code's
-    // statusline area. Claude Code does not expose its own usable
-    // width to the statusline command; the request is filed and closed
-    // as not planned (anthropics/claude-code#5430), and `tput cols` /
-    // `$COLUMNS` are both unreliable inside the hook process. So the
-    // best we can do is detect the terminal width and conservatively
-    // shave a few columns. `statuslineWidthOffset` in
-    // ~/.claude/cc-statusline-rows.json lets the user fine-tune this
-    // (positive = shave more; default = 4, which fits most terminals).
+    // ── Terminal width ────────────────────────────────────────────
+    // Detection inside a Claude Code statusline hook is largely futile:
+    //   * stdio is a pipe, so `process.stdout.columns` is undefined
+    //   * `$COLUMNS` is not exported
+    //   * `tput cols` is hardcoded to 80
+    //   * spawning PowerShell on Windows reports the spawned subprocess's
+    //     own hidden-window width, not the user's terminal
+    //   * `/dev/tty` is not accessible from this subprocess on most setups
+    //   * Claude Code itself declines to pass the width — the request was
+    //     filed and closed as not planned:
+    //     https://github.com/anthropics/claude-code/issues/5430
+    //
+    // We make a best-effort attempt at the cheap signals (process.stdout
+    // .columns and `$COLUMNS`) so this works automatically if Anthropic
+    // ever changes the stdio contract. Otherwise the user is the source
+    // of truth: set `statuslineWidth` in ~/.claude/cc-statusline-rows.json
+    // to your terminal's actual column count. Default 120 is a safe
+    // conservative box size that fits most terminals without overflowing.
     let widthOffset = 4;
+    let userStatuslineWidth = 0;
     try {
       const cfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'cc-statusline-rows.json'), 'utf8'));
       if (typeof cfg.statuslineWidthOffset === 'number' && cfg.statuslineWidthOffset >= 0) {
         widthOffset = Math.floor(cfg.statuslineWidthOffset);
       }
+      if (typeof cfg.statuslineWidth === 'number' && cfg.statuslineWidth > 0) {
+        userStatuslineWidth = Math.floor(cfg.statuslineWidth);
+      }
     } catch (e) {}
+    let TERM_W = 0;
+    if (userStatuslineWidth > 0) {
+      // User-supplied width wins. They measured it; trust it.
+      TERM_W = userStatuslineWidth;
+    } else {
+      // Best-effort cheap signals only. No PowerShell spawn, no /dev/tty,
+      // no on-disk cache — those persisted wrong values across renders.
+      TERM_W = process.stdout.columns || process.stderr.columns || 0;
+      if (!TERM_W) { try { TERM_W = parseInt(process.env.COLUMNS, 10) || 0; } catch (e) {} }
+      if (!TERM_W) TERM_W = 120;
+    }
     TERM_W = Math.max(20, TERM_W - widthOffset);
 
     // Left = content-driven (never truncated). Right = fills remaining terminal space.
