@@ -124,7 +124,7 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 | `message-tracker.js` | UserPromptSubmit / Stop | 快取最近的對話供歷史欄顯示 |
 | `summary-updater.js` | UserPromptSubmit | 每 ~10 則訊息請 Claude 用壓縮規則重寫 whole-session 摘要 |
 | `active-time-tracker.js` | UserPromptSubmit / Stop | 維護 active session 時長（每個 turn 時長累加）— 第一次跑 bootstrap 從 transcript 還原歷史，之後 per-turn 累加 |
-| `mcp-status-refresh.js` | （沒有事件 — 自動觸發）| Statusline 在每次 render 時於背景 spawn，從 `claude mcp list` 更新 `~/.claude/mcp-status-cache.json`。cache 新於 90 秒就自動跳過 |
+| `mcp-status-refresh.js` | _(不是 Claude Code hook 事件)_ | Statusline 在 cache stale 時於背景 spawn 它（cache 新於 90 秒就跳過），從 `claude mcp list` 更新 `~/.claude/mcp-status-cache.json`。放在 `hooks/` 純粹是因為 install 步驟用 wildcard 一起 cp，並不會被 hooks 設定觸發 |
 
 ## 它如何撐過 reset 與多 session
 
@@ -169,9 +169,18 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 12 個 row key：`summary`、`dir`、`repo`、`model`、`duration`、`cost`、`usage`、`quota`、`agents`、`memory_mcp`、`edited`、`history`。
 
-同一個 config 檔也接受 `"summaryInterval": N`，控制 session 摘要多久重寫一次（預設每 `10` 則 user 訊息）。設 `5` 更密、設 `20` 更稀。
-
 空格子會自動合併 — 關掉一整欄會把 split 兩列合成全寬；整個 split 區塊全關，頂部邊框會融入下一個區塊（不會留多餘的水平線）。
+
+### 其他可調 config
+
+`~/.claude/cc-statusline-rows.json` 也吃以下非 row 設定（完整說明在 `commands/rows.md`）：
+
+| key | 預設 | 用途 |
+|-----|------|------|
+| `summaryInterval` | `10` | session 摘要多久重寫一次（按 UserPromptSubmit 數） |
+| `aggWindowDays` | `0`（all time） | 跨 session cost / tokens 聚合的滾動視窗（例：`7` / `30` / `90`） |
+| `statuslineWidth` | _(auto，fallback `120`)_ | 直接指定 box 寬度欄數；在一般 shell 跑 `tput cols` 量一次 |
+| `statuslineWidthOffset` | `4` | 右側保留欄數給 Claude Code 自己的 padding |
 
 ## 不裝 hooks
 
