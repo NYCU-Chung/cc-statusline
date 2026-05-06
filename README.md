@@ -124,6 +124,7 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 | `message-tracker.js` | UserPromptSubmit / Stop | Caches recent messages for the history column |
 | `summary-updater.js` | UserPromptSubmit | Every ~10 messages, asks Claude to rewrite the whole-session summary with compression rules |
 | `active-time-tracker.js` | UserPromptSubmit / Stop | Maintains active session time (sum of turn durations) — bootstraps from transcript on first run, then accumulates per turn |
+| `mcp-status-refresh.js` | _(not a Claude Code hook event)_ | Background script auto-spawned by `statusline.js` when the MCP cache is stale. Probes `claude mcp list` and writes `~/.claude/mcp-status-cache.json`. Lives in `hooks/` only because that's where the install steps copy it; it's never invoked via the hooks settings entries. |
 | `mcp-status-refresh.js` | (none — auto-spawned) | Statusline launches this in the background each render to refresh `~/.claude/mcp-status-cache.json` from `claude mcp list`. Self-skips if cache is fresh (<90s). |
 
 ## How it survives resets and multi-session
@@ -169,9 +170,18 @@ Don't want every row? Use the `/cc-statusline:rows` slash command (shipped with 
 
 12 row keys: `summary`, `dir`, `repo`, `model`, `duration`, `cost`, `usage`, `quota`, `agents`, `memory_mcp`, `edited`, `history`.
 
-The same config file also accepts `"summaryInterval": N` to change how often the session summary is rewritten (default every `10` user messages). Set `5` for denser updates, `20` for quieter ones.
-
 The layout auto-collapses when cells go empty — hide an entire column and the split layout merges into full-width rows; hide the whole split block and the top border fuses with the next section (no redundant horizontal lines).
+
+### Configuration knobs
+
+`~/.claude/cc-statusline-rows.json` also accepts these non-row settings (full reference in `commands/rows.md`):
+
+| key | default | what it does |
+|-----|---------|--------------|
+| `summaryInterval` | `10` | UserPromptSubmit events between session-summary nudges |
+| `aggWindowDays` | `0` (all time) | rolling window for cross-session cost / tokens aggregate; e.g. `7` / `30` / `90` |
+| `statuslineWidth` | _(auto, fallback `120`)_ | hard-set box width in columns — measure with `tput cols` from a normal shell |
+| `statuslineWidthOffset` | `4` | columns reserved on the right for Claude Code's own padding |
 
 ## Without hooks
 

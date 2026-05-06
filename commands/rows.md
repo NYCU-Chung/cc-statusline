@@ -30,7 +30,7 @@ Besides row toggles the file also holds non-row behaviour knobs:
 | `repo`       | `owner/repo branch (N changed)` row |
 | `model`      | Model name + effort level |
 | `duration`   | Active session time (sum of turn durations from UserPromptSubmit → Stop, idle outside turns naturally excluded). Shares the model row area visually but toggles independently. |
-| `cost`       | `cost $TOTAL <window> ($SESSION this session)` — window label reflects `aggWindowDays` |
+| `cost`       | `cost $TOTAL (<window>) · $SESSION (this session)` — window label reflects `aggWindowDays` |
 | `usage`      | `tokens ... context ... compact ...` row |
 | `quota`      | `5h-quota` + `7d-quota` row with countdowns |
 | `agents`     | Subagent activity row |
@@ -44,12 +44,12 @@ $ARGUMENTS
 
 ## What to do
 
-1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` as `true`, every row as `true`, and `summaryInterval` as `10`.
+1. **Read** `~/.claude/cc-statusline-rows.json`. If it doesn't exist, treat `enabled` as `true`, every row as `true`, `summaryInterval` as `10`, `aggWindowDays` as `0` (all time), `statuslineWidth` as unset (auto-detect with fallback `120`), and `statuslineWidthOffset` as `4`.
 2. **Parse user input** from above:
    - No args → just list current state (step 4, no write).
    - `off` (no rows listed) → set `enabled: false` (master switch off). Keep row flags intact.
    - `on` (no rows listed) → set `enabled: true`. Keep row flags intact.
-   - `reset` → set `enabled: true`, every row key to `true`, and remove `summaryInterval` and `aggWindowDays` (falls back to defaults `10` and `0`).
+   - `reset` → set `enabled: true`, every row key to `true`, and remove every special-options key (`summaryInterval`, `aggWindowDays`, `statuslineWidth`, `statuslineWidthOffset`) so each falls back to its default.
    - `summary-interval <N>` → set `summaryInterval: N`. Reject `N < 1`.
    - `agg-window <N>` → set `aggWindowDays: N`. Accept `0` (all time). Reject negative.
    - `only <rows...>` → every listed row becomes `true`, every other row becomes `false`. Leave special options untouched.

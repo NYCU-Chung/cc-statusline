@@ -594,7 +594,7 @@ process.stdin.on('end', () => {
 
     // Full-width left rows — each row gated by /cc-statusline:rows config
     const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
-    const ctxLine = `${DIM}tokens${R} ${fmtTok(allTok)} ${DIM}(${R}${fmtTok(tokTotal)}${DIM} this session)${R}  ${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
+    const ctxLine = `${DIM}tokens${R} ${fmtTok(allTok)} ${DIM}(${windowLabel})${R} ${DIM}·${R} ${fmtTok(tokTotal)} ${DIM}(this session)${R}  ${DIM}context${R} ${cc(ctx)}${bar(ctx)} ${ctx}%${R}  ${DIM}compact${R} ${compactLabel}`;
     // Wider gap between 5h and 7d so the row breathes
     const quotaLine = `${DIM}5h-quota${R} ${cc(r5h)}${bar(r5h)} ${r5h}%${R} ${resetInfo}     ${DIM}7d-quota${R} ${cc(r7d)}${bar(r7d)} ${r7d}%${R} ${reset7dInfo}`;
     const fullLeftRows = [];
