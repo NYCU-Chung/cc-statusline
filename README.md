@@ -128,7 +128,7 @@ Add these to your `~/.claude/settings.json` hooks section to enable all statusli
 
 ## How it survives resets and multi-session
 
-**Delta-based cost / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd` etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `/tmp/claude-cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward. (Active session time follows a separate path — see "Per-feature state isolation" below.)
+**Delta-based cost / lines / tokens.** Claude Code occasionally resets `cost.total_cost_usd` etc. mid-session (context compaction, auto-recovery, etc.). The statusline tracks deltas in `~/.claude/cc-statusline/cum-<sid>.json` — when the payload value drops, only the baseline is reset; the cumulative total never goes backward. (Active session time follows a separate path — see "Per-feature state isolation" below.)
 
 **Defensive per-session keying via transcript filename.** Every per-session tmp file (cum, messages, summary, agents, files, compact count) is keyed by `path.basename(transcript_path)` rather than the runtime `session_id` payload, falling back to `session_id` only when no transcript is present. The transcript filename is the canonical UUID of the logical session and is invariant for its lifetime, so this keying stays correct even if `session_id` semantics ever shift. (Empirically on the current Claude Code build, `session_id` and the transcript filename UUID are already identical — the choice is preventive, not a bug fix.)
 
@@ -175,11 +175,11 @@ The layout auto-collapses when cells go empty — hide an entire column and the 
 
 ## Without hooks
 
-The statusline works without the hooks — you just won't see agents, edited files, message history, compact count, or session summary. Quotas, cost, model, git, tokens, memory, and MCP all work from the built-in statusline JSON payload + the auto-spawned MCP refresher.
+The statusline works without the hooks — you just won't see agents, edited files, message history, compact count, session summary, or active session time. Quotas, cost, model, git, tokens, memory, and MCP all work from the built-in statusline JSON payload + the auto-spawned MCP refresher.
 
 ## Known limitations
 
-- Claude Code does not pass terminal width to statusline commands ([issue #22115](https://github.com/anthropics/claude-code/issues/22115)). On Windows, the script uses PowerShell as a fallback to detect width. The right border may not perfectly align with the terminal edge until this is fixed upstream.
+- Claude Code does not pass terminal width to statusline commands ([issue #5430, closed as not planned](https://github.com/anthropics/claude-code/issues/5430)) and `process.stdout.columns` / `tput cols` / `$COLUMNS` are all unreliable inside the hook. The statusline defaults to a conservative 120-column box; **set `statuslineWidth` in `~/.claude/cc-statusline-rows.json` to your terminal's actual column count** (run `tput cols` in a normal shell to measure). `statuslineWidthOffset` (default 4) reserves columns on the right for Claude Code's own padding.
 - MCP server state shown by the statusline comes from `claude mcp list` (a fresh probe at refresh time). Claude Code's `/mcp` UI shows the running session's cached state. The two can disagree if a server's connection has changed since the session started — the statusline reflects the latest probe, the UI reflects the session's view.
 - `claude mcp list` does not expose all built-in bridges (e.g. `claude-in-chrome`), so the statusline's MCP count can be lower than what `/mcp` shows.
 - Claude Code does not currently expose live MCP state in the statusline JSON payload ([issue #5511](https://github.com/anthropics/claude-code/issues/5511)) — once it does, the auto-spawned refresher won't be needed.

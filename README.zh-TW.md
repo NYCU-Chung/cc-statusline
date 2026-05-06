@@ -128,7 +128,7 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 ## 它如何撐過 reset 與多 session
 
-**Delta-based 累積 cost / lines / tokens。** Claude Code 偶爾會在 session 中途 reset `cost.total_cost_usd` 等（context compact、auto-recovery 等）。Statusline 在 `/tmp/claude-cum-<sid>.json` 追蹤增量 — payload 值掉下時只重設 baseline，累積總值絕不倒退。
+**Delta-based 累積 cost / lines / tokens。** Claude Code 偶爾會在 session 中途 reset `cost.total_cost_usd` 等（context compact、auto-recovery 等）。Statusline 在 `~/.claude/cc-statusline/cum-<sid>.json` 追蹤增量 — payload 值掉下時只重設 baseline，累積總值絕不倒退。
 
 **Per-session 鍵採用 transcript filename（防禦性設計）。** 所有 per-session 的 tmp 檔（cum、messages、summary、agents、files、compact count）都以 `path.basename(transcript_path)` 為鍵，沒有 transcript 時才 fallback 到 `session_id`。Transcript filename 是邏輯 session 的 canonical UUID、生命週期內不變，即使將來 `session_id` 語意改變也不會失效。（實測當前 Claude Code，`session_id` 跟 transcript filename UUID 是一致的 — 這個改動是 future-proof / 防禦性、不是修當前 bug。）
 
@@ -175,11 +175,11 @@ copy "%USERPROFILE%\cc-statusline\hooks\*.js" "%USERPROFILE%\.claude\hooks\"
 
 ## 不裝 hooks
 
-Statusline 不裝 hooks 也能用 — 只是看不到 agents、編輯檔案、訊息歷史、壓縮次數和 session 摘要。配額、成本、模型、git、tokens、memory、MCP 都能從內建的 statusline JSON payload + 自動 spawn 的 MCP refresher 取得。
+Statusline 不裝 hooks 也能用 — 只是看不到 agents、編輯檔案、訊息歷史、壓縮次數、session 摘要、active session 時長。配額、成本、模型、git、tokens、memory、MCP 都能從內建的 statusline JSON payload + 自動 spawn 的 MCP refresher 取得。
 
 ## 已知限制
 
-- Claude Code 目前不會把終端機寬度傳給 statusline 指令（[issue #22115](https://github.com/anthropics/claude-code/issues/22115)）。在 Windows 上腳本用 PowerShell 作為 fallback 偵測寬度。在上游修復之前，右邊框線可能無法完美貼齊終端機邊緣。
+- Claude Code 不會把終端機寬度傳給 statusline 指令（[issue #5430，closed as not planned](https://github.com/anthropics/claude-code/issues/5430)），且 `process.stdout.columns` / `tput cols` / `$COLUMNS` 在 hook 內全都不可靠。Statusline 預設用保守的 120 欄 box；**請在 `~/.claude/cc-statusline-rows.json` 設 `statuslineWidth` 為你 terminal 的實際 column 數**（在一般 shell 跑 `tput cols` 量一次）。`statuslineWidthOffset`（預設 4）保留幾欄給 Claude Code 自己的 padding。
 - Statusline 顯示的 MCP server 狀態來自 `claude mcp list`（每次 refresh 重新 probe）。Claude Code 的 `/mcp` UI 顯示的是當前 session 啟動時的快取狀態。如果 server 連線在 session 啟動後改變，兩邊會不一致 — statusline 反映最新 probe，UI 反映 session 視角。
 - `claude mcp list` 不會列出所有 built-in bridge（例如 `claude-in-chrome`），所以 statusline 的 MCP count 可能比 `/mcp` 少。
 - Claude Code 目前還沒在 statusline JSON payload 暴露即時 MCP 狀態（[issue #5511](https://github.com/anthropics/claude-code/issues/5511)）— 一旦支援，自動 spawn 的 refresher 就不再需要。
