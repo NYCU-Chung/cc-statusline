@@ -739,28 +739,50 @@ process.stdin.on('end', () => {
     //      ANSI styling is preserved per chunk via `wrap()` above.
     //   3. Recompute LEFT_W from the wrapped row set so the border draws
     //      to the new width.
+    //
+    // `fullLeftRowsMeta` / `preSplitRowsMeta` are parallel arrays of
+    // `{ gid }` carrying which original row each wrapped piece came from,
+    // so the render pass can skip the divider between pieces of the same
+    // original row (no horizontal line cutting one logical row in half).
+    const fullLeftRowsMeta = fullLeftRows.map((_, i) => ({ gid: i }));
+    const preSplitRowsMeta = preSplitRows.map((_, i) => ({ gid: i }));
     const TARGET_INNER_W = Math.max(40, TERM_W - 2); // -2 for box border (│ … │)
     if (LEFT_W > TARGET_INNER_W) {
       if (LEFT_INNER > TARGET_INNER_W && hasSplitBlock) {
-        if (splitRow1L) preSplitRows.push(splitRow1L);
-        if (splitRow1R) preSplitRows.push(splitRow1R);
-        if (splitRow2L) preSplitRows.push(splitRow2L);
-        if (splitRow2R) preSplitRows.push(splitRow2R);
+        const splitCells = [splitRow1L, splitRow1R, splitRow2L, splitRow2R].filter(Boolean);
+        let gid = preSplitRows.length;
+        for (const c of splitCells) {
+          preSplitRows.push(c);
+          preSplitRowsMeta.push({ gid: gid++ });
+        }
         splitRow1L = splitRow1R = splitRow2L = splitRow2R = '';
         hasRow1 = hasRow2 = hasSplitBlock = false;
       }
       const wrappedFull = [];
-      for (const row of fullLeftRows) {
-        for (const piece of wrap(row, TARGET_INNER_W - 2)) wrappedFull.push(piece);
+      const wrappedFullMeta = [];
+      for (let i = 0; i < fullLeftRows.length; i++) {
+        const pieces = wrap(fullLeftRows[i], TARGET_INNER_W - 2);
+        if (i === memMcpRowIdx) memMcpRowIdx = wrappedFull.length;
+        for (const p of pieces) {
+          wrappedFull.push(p);
+          wrappedFullMeta.push({ gid: fullLeftRowsMeta[i].gid });
+        }
       }
-      fullLeftRows.length = 0;
+      fullLeftRows.length = 0; fullLeftRowsMeta.length = 0;
       fullLeftRows.push(...wrappedFull);
+      fullLeftRowsMeta.push(...wrappedFullMeta);
       const wrappedPre = [];
-      for (const row of preSplitRows) {
-        for (const piece of wrap(row, TARGET_INNER_W - 2)) wrappedPre.push(piece);
+      const wrappedPreMeta = [];
+      for (let i = 0; i < preSplitRows.length; i++) {
+        const pieces = wrap(preSplitRows[i], TARGET_INNER_W - 2);
+        for (const p of pieces) {
+          wrappedPre.push(p);
+          wrappedPreMeta.push({ gid: preSplitRowsMeta[i].gid });
+        }
       }
-      preSplitRows.length = 0;
+      preSplitRows.length = 0; preSplitRowsMeta.length = 0;
       preSplitRows.push(...wrappedPre);
+      preSplitRowsMeta.push(...wrappedPreMeta);
       maxFull = 0;
       for (const f of [...preSplitRows, ...fullLeftRows]) {
         maxFull = Math.max(maxFull, dw(f) + 2);
@@ -818,7 +840,14 @@ process.stdin.on('end', () => {
     const splitOpenDivider = (hasSplitBlock && !topMergeSplitSlot) ? 1 : 0;
     const splitCloseDivider = (hasSplitBlock && fullLeftRows.length > 0) ? 1 : 0;
     const allFullRows = preSplitRows.length + fullLeftRows.length;
-    const fullDividers = Math.max(0, preSplitRows.length - 1) + (fullLeftRows.length > 1 ? fullLeftRows.length - 1 : 0);
+    // Count dividers between groups, not between every row — pieces of the same
+    // wrapped row share a `gid` and don't get a divider between them.
+    const countGroupDividers = (meta) => {
+      let n = 0;
+      for (let i = 1; i < meta.length; i++) if (meta[i].gid !== meta[i-1].gid) n++;
+      return n;
+    };
+    const fullDividers = countGroupDividers(preSplitRowsMeta) + countGroupDividers(fullLeftRowsMeta);
     let sectionDividers = 0;
     if (hasSummary && (preSplitRows.length || hasSplitBlock || fullLeftRows.length)) sectionDividers++;
     if (preSplitRows.length && fullLeftRows.length && !hasSplitBlock) sectionDividers++;
@@ -880,11 +909,14 @@ process.stdin.on('end', () => {
       }
     }
 
-    // pre-split full-width rows (when an entire split column collapsed to single-cell)
+    // pre-split full-width rows (when an entire split column collapsed to single-cell).
+    // Skip the divider between pieces of the same wrapped row (same gid).
     if (preSplitRows.length > 0) {
       if (hasSummary) output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
       for (let j = 0; j < preSplitRows.length; j++) {
-        if (j > 0) output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+        if (j > 0 && preSplitRowsMeta[j].gid !== preSplitRowsMeta[j-1].gid) {
+          output.push(`${h('\u251c')}${h(hl(LEFT_W))}${h('\u2524')}${rcell()}`);
+        }
         output.push(`${h('\u2502')} ${pad(preSplitRows[j], LEFT_W - 2)} ${h('\u2502')}${rcell()}`);
       }
     }
@@ -908,14 +940,17 @@ process.stdin.on('end', () => {
 
     // Full-width left rows
     for (let j = 0; j < fullLeftRows.length; j++) {
-      output.push(`${h('\u2502')} ${pad(fullLeftRows[j], LEFT_W - 2)} ${h('\u2502')}${rcell()}`);
+      output.push(`${h('│')} ${pad(fullLeftRows[j], LEFT_W - 2)} ${h('│')}${rcell()}`);
       if (j < fullLeftRows.length - 1) {
-        const marks = {};
-        if (mcpHlIdx >= 0) {
-          if (j + 1 === memMcpRowIdx) marks[mcpHlIdx] = '\u252c'; // ┬
-          else if (j === memMcpRowIdx) marks[mcpHlIdx] = '\u2534'; // ┴
+        const sameGroup = fullLeftRowsMeta[j+1].gid === fullLeftRowsMeta[j].gid;
+        if (!sameGroup) {
+          const marks = {};
+          if (mcpHlIdx >= 0) {
+            if (j + 1 === memMcpRowIdx) marks[mcpHlIdx] = '┬';
+            else if (j === memMcpRowIdx) marks[mcpHlIdx] = '┴';
+          }
+          output.push(`${h('├')}${h(hlm(LEFT_W, marks))}${h('┤')}${rcell()}`);
         }
-        output.push(`${h('\u251c')}${h(hlm(LEFT_W, marks))}${h('\u2524')}${rcell()}`);
       }
     }
 
