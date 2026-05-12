@@ -116,6 +116,27 @@ process.stdin.on('end', () => {
       }
       return result;
     };
+    // Wrap a styled string into an array of pieces, each ≤ `w` display columns,
+    // preserving ANSI escape sequences (they take no width). Does not try to
+    // honour word boundaries — wraps at exact column count. Used by the
+    // fit-to-width pass when LEFT_W would otherwise exceed the terminal.
+    const wrap = (s, w) => {
+      if (dw(s) <= w) return [s];
+      const out = [];
+      let rw = 0, cur = '', inEsc = false;
+      for (let j = 0; j < s.length; j++) {
+        if (s[j] === '\x1b') { inEsc = true; cur += s[j]; continue; }
+        if (inEsc) { cur += s[j]; if (/[a-zA-Z]/.test(s[j])) inEsc = false; continue; }
+        const cw = isWide(s.codePointAt(j)) ? 2 : 1;
+        if (rw + cw > w && rw > 0) {
+          out.push(cur);
+          cur = ''; rw = 0;
+        }
+        cur += s[j]; rw += cw;
+      }
+      if (cur) out.push(cur);
+      return out;
+    };
     const bar = (pct, len = 10) => '\u2588'.repeat(Math.round(pct / 100 * len)) + '\u2591'.repeat(len - Math.round(pct / 100 * len));
     const cc = pct => pct >= 80 ? RED : pct >= 50 ? YELLOW : GREEN;
     const fmtDur = min => {
@@ -587,10 +608,12 @@ process.stdin.on('end', () => {
       if (splitRow2L) preSplitRows.push(splitRow2L);
       splitRow1L = splitRow1R = splitRow2L = splitRow2R = '';
     }
-    // Whole-empty row skip: if both cells of a row are empty, don't emit that row at all
-    const hasRow1 = !!(splitRow1L || splitRow1R);
-    const hasRow2 = !!(splitRow2L || splitRow2R);
-    const hasSplitBlock = hasRow1 || hasRow2;
+    // Whole-empty row skip: if both cells of a row are empty, don't emit that row at all.
+    // These are `let` because the fit-to-width pass below may collapse the split block
+    // into stacked rows when LEFT_INNER overflows the terminal.
+    let hasRow1 = !!(splitRow1L || splitRow1R);
+    let hasRow2 = !!(splitRow2L || splitRow2R);
+    let hasSplitBlock = hasRow1 || hasRow2;
 
     // Full-width left rows — each row gated by /cc-statusline:rows config
     const compactLabel = `${compactCount} time${compactCount === 1 ? '' : 's'}`;
@@ -701,6 +724,50 @@ process.stdin.on('end', () => {
       if (!TERM_W) TERM_W = 120;
     }
     TERM_W = Math.max(20, TERM_W - widthOffset);
+
+    // ── Fit to width ──────────────────────────────────────────────
+    // statuslineWidth caps the box's outer width. The left side is content-
+    // driven (LEFT_W = max(LEFT_INNER, maxFull)) and can exceed TERM_W on
+    // small terminals or sessions with long rows (cost / quota / summary).
+    // When that happens Claude Code's statusline area truncates the box
+    // with `…` and the user sees a blank statusline.
+    //
+    // Degrade gracefully without dropping information:
+    //   1. If the 2-column split block (LEFT_INNER) overflows, collapse it
+    //      to stacked single-column rows via preSplitRows.
+    //   2. Wrap any row whose content still exceeds the target inner width.
+    //      ANSI styling is preserved per chunk via `wrap()` above.
+    //   3. Recompute LEFT_W from the wrapped row set so the border draws
+    //      to the new width.
+    const TARGET_INNER_W = Math.max(40, TERM_W - 2); // -2 for box border (│ … │)
+    if (LEFT_W > TARGET_INNER_W) {
+      if (LEFT_INNER > TARGET_INNER_W && hasSplitBlock) {
+        if (splitRow1L) preSplitRows.push(splitRow1L);
+        if (splitRow1R) preSplitRows.push(splitRow1R);
+        if (splitRow2L) preSplitRows.push(splitRow2L);
+        if (splitRow2R) preSplitRows.push(splitRow2R);
+        splitRow1L = splitRow1R = splitRow2L = splitRow2R = '';
+        hasRow1 = hasRow2 = hasSplitBlock = false;
+      }
+      const wrappedFull = [];
+      for (const row of fullLeftRows) {
+        for (const piece of wrap(row, TARGET_INNER_W - 2)) wrappedFull.push(piece);
+      }
+      fullLeftRows.length = 0;
+      fullLeftRows.push(...wrappedFull);
+      const wrappedPre = [];
+      for (const row of preSplitRows) {
+        for (const piece of wrap(row, TARGET_INNER_W - 2)) wrappedPre.push(piece);
+      }
+      preSplitRows.length = 0;
+      preSplitRows.push(...wrappedPre);
+      maxFull = 0;
+      for (const f of [...preSplitRows, ...fullLeftRows]) {
+        maxFull = Math.max(maxFull, dw(f) + 2);
+      }
+      LEFT_W = Math.max(hasSplitBlock ? LEFT_INNER : 0, maxFull);
+      LEFT_W = Math.min(LEFT_W, TARGET_INNER_W);
+    }
 
     // Left = content-driven (never truncated). Right = fills remaining terminal space.
     const MSG_W = Math.max(0, TERM_W - LEFT_W - 3);
